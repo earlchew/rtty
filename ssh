@@ -1,0 +1,116 @@
+#!/usr/bin/env python
+
+import sys
+import os
+
+def die(msg):
+    sys.stderr.write("%s: %s\n" % ( sys.argv[0], msg ))
+    exit(1)
+
+class GnomeTerminal:
+
+    def __init__(self):
+        pass
+
+    def env(self):
+        return [ ]
+
+    def args(self, aProgram, aTitle, aArgs):
+        return [ "gnome-terminal",
+                 "--profile=Remote",
+                 "--title=" + aTitle,
+                 "-x",
+                 aProgram ] + aArgs
+
+    def spawn(self, aArgs):
+        os.execvp(aArgs[0], aArgs)
+        return None
+
+class Xfce4Terminal:
+
+    def __init__(self):
+        pass
+
+    def env(self):
+        return [ ( "XDG_CONFIG_HOME",
+                   os.environ["HOME"] + "/.remote-terminal-config" ) ]
+
+    def args(self, aProgram, aTitle, aArgs):
+        return [ "xfce4-terminal",
+                 "--disable-server",
+                 "--title=" + aTitle,
+                 "-x",
+                 aProgram ] + aArgs
+
+    def spawn(self, aArgs):
+        return os.spawnvp(os.P_NOWAIT, aArgs[0], aArgs)
+
+class NoTerminal:
+
+    def __init__(self):
+        pass
+
+    def env(self):
+        return [ ]
+
+    def args(self, aProgram, aTitle, aArgs):
+        return [ aProgram ] + aArgs
+
+    def spawn(self, aArgs):
+        os.execvp(aArgs[0], aArgs)
+        return None
+
+bindir = os.path.dirname(os.path.abspath(__file__))
+binfile = os.path.basename(os.path.abspath(__file__))
+
+binpath = os.pathsep.join([
+    dir
+    for dir in os.environ["PATH"].split(os.pathsep)
+    if dir != bindir ])
+
+binexe = [ os.path.join(path, binfile)
+           for path in binpath.split(os.pathsep)
+           if os.path.isfile(os.path.join(path, binfile)) ].pop()
+
+if not binexe:
+    die("%s not found in %s" % (binfile, binpath))
+
+colorterm = os.getenv("COLORTERM")
+
+if colorterm == "xfce4-terminal":
+    terminal = Xfce4Terminal()
+elif colorterm == "gnome-terminal":
+    terminal = GnomeTerminal()
+else:
+    terminal = NoTerminal()
+
+argopt = [ ]
+arg0 = sys.argv.pop(0)
+argset = set( [ '-b', '-c', '-D', '-e', '-F', '-I', '-i', '-L',
+                '-l', '-m', '-O', '-o', '-p', '-R', '-S', '-W', '-w' ] )
+
+while len(sys.argv) != 0 and sys.argv[0][:1] == '-':
+    argopt.append(sys.argv.pop(0))
+    if argopt[-1] == '--':
+        break
+    elif argopt[-1] in argset:
+        if len(sys.argv) != 0:
+            argopt.append(sys.argv.pop(0))
+    pass
+
+if len(sys.argv) != 1:
+    sys.argv = [ binexe ] + argopt + sys.argv
+else:
+    for name,value in terminal.env():
+        os.environ[name] = value
+        if os.getenv("DEBUGSSH") != None:
+            sys.stderr.write('export %s=%s\n' % (name, value))
+    sys.argv = terminal.args(binexe, 
+                             ' '.join(str(arg) for arg in sys.argv),
+                             argopt + sys.argv)
+
+if os.getenv("DEBUGSSH") != None:
+    sys.stderr.write(' '.join(str(arg) for arg in sys.argv) + '\n')
+
+if terminal.spawn(sys.argv) is None:
+    die("Unable to exec %s" % (sys.argv[0]))
