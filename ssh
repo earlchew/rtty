@@ -2,56 +2,325 @@
 
 import sys
 import os
+import errno
+import re
+from fnmatch import fnmatch
+
+SSHDEBUG = os.getenv("SSHDEBUG") != None
+
+def debug(msg):
+    if SSHDEBUG:
+        sys.stderr.write("+ %s\n" % (msg))
 
 def die(msg):
     sys.stderr.write("%s: %s\n" % ( sys.argv[0], msg ))
     exit(1)
 
-class GnomeTerminal:
+###############################################################################
+class SshConfig:
+
+    # This list of valid whitespace characters is extracted from
+    # the ssh source code and is used to ensure that the interpretation
+    # of whitespace matches the ssh implementation.
+
+    __WHITESPACE        = " \t\r\n"
+    __WHITESPACE_EQUALS = __WHITESPACE + '='
+
+    __WHITESPACE_RE        = '[' + __WHITESPACE        + ']'
+    __WHITESPACE_EQUALS_RE = '[' + __WHITESPACE_EQUALS + ']'
+
+    @staticmethod
+    def __splitLine(aLine):
+
+        words = [ ]
+
+        # Split a line into words according to the algorithm implemented
+        # in www.openssh.org strdelim() in misc.c. The manual page is
+        # a little vague on the subject of using an = as a separator speaking
+        # first about keywords and arguments, then describing configuration
+        # options which are not clearly either keywords or arguments:
+        #
+        #   Empty lines and lines starting with '#' are comments.  Otherwise a
+        #   line is of the format "keyword arguments".  Configuration options
+        #   may be separated by whitespace or optional whitespace and exactly
+        #   one '='; the latter format is useful to avoid the need to quote
+        #   whitespace when specifying configuration options using the
+        #   ssh, scp, and sftp -o option.  Arguments may optionally be
+        #   enclosed in double quotes (") in order to represent arguments
+        #   containing spaces.
+        #
+        # The implementation uses strdelim() to repeated chomp off the
+        # next word in a string. The word is terminated before the
+        # next occuring whitespace or equals sign. If the word starts with a
+        # double quote, the end of the word is located at the occurrence
+        # of the next matching quote. Once the word is identified, the function
+        # skips the trailing whitespace, including the first equals sign that
+        # it encounters.
+        #
+        # This means that the only way to embed whitespace or an equals sign
+        # in a word is to use double quotes, but there is no way to pass
+        # an argument that starts with a double quote.
+
+        line = aLine
+        ws   = SshConfig.__WHITESPACE_RE
+
+        while len(line) != 0:
+
+            if line[0] != '"':
+
+                match = re.search((ws + '+') + "=?" + (ws + '*'), line)
+
+                if match is None:
+                    words.append(line)
+                    break
+                words.append(line[:match.start()])
+                line = line[match.end():]
+
+            else:
+
+                line = line[1:]
+                match = line.find('"')
+
+                if match < 0:
+                    # words.append(line)
+                    # The strdelim() implementation discards the fragment
+                    # if there is no matching closing double quote.
+                    break
+                words.append(line[:match])
+                line = line[match+1:]
+
+                match = re.search(('^' + ws + '+'), line)
+
+                if match is not None:
+                    line = line[match.end():]
+
+            pass
+
+        if len(words) > 0 and len(words[0]) == 0:
+            words.pop(0)
+
+        return words
 
     def __init__(self):
-        pass
 
+        hostName = ''
+        hostIndex = 0
+        lineNum = 0
+
+        self._hostName              = [ ]
+        self._hostConfig            = dict()
+        self._hostConfig[hostIndex] = dict()
+
+        homeDirectory = os.getenv("HOME")
+
+        if homeDirectory == None:
+            return
+
+        try:
+            cfgFile = open(os.sep.join(
+                [ homeDirectory, ".ssh", "config"]))
+        except IOError as err:
+            if err.errno == errno.ENOENT:
+                return
+            raise
+
+        while True:
+            line = cfgFile.readline()
+            lineNum = lineNum + 1
+            if len(line) == 0:
+                break
+            if line[-1] == '\n':
+                line = line[:-1]
+
+            words = SshConfig.__splitLine(line)
+            if len(words) == 0:
+                continue
+
+            key = words[0]
+            val = words[1:]
+
+            if key[0] == '#' and ( len(key) == 1 or key[1] != '@' ):
+                continue
+
+            if len(words) < 2:
+                die("Malformed configuration at line %d: '%s'" %
+                    (lineNum, line))
+
+            debug("CONFIG: %s %s" % (key, val))
+
+            if key != 'Host':
+                if key not in self._hostConfig[hostIndex]:
+                    self._hostConfig[hostIndex][key] = [ ]
+                self._hostConfig[hostIndex][key].append(val)
+            else:
+                hostIndex = hostIndex + 1
+                self._hostName.append( (hostIndex, val) )
+                self._hostConfig[hostIndex] = dict()
+            pass
+
+        cfgFile.close()
+
+    def __getitem__(self, aHost):
+
+        # Construct a list of configuration entries to be applied to this
+        # host. The list is constructed in reverse order so that the later
+        # entries will override the earlier ones.
+
+        hostList = [ 0 ]
+        if aHost is not None:
+            for hostIndex, hostPatterns in self._hostName:
+                for hostPattern in hostPatterns:
+                    if fnmatch(aHost, hostPattern):
+                        hostList.insert(0, hostIndex)
+                        break
+                    pass
+                pass
+
+        hostConfig = dict()
+
+        for hostIndex in hostList:
+            hostConfig = dict(
+                self._hostConfig[hostIndex].items() + hostConfig.items())
+
+        debug("HOST: %s" % (hostConfig))
+        return hostConfig
+
+###############################################################################
+class Terminal(object):
+
+    def __init__(self, aSshConfig, aHostName):
+        if aHostName is not None:
+
+            self.__terminalColour = None
+
+            terminalName = self.name[0].upper() + self.name[1:]
+            colourKeys  = [
+                '#@' + terminalName + '-' + colour for colour in
+                [ 'ColourScheme', 'ColorScheme' ] ]
+            config = aSshConfig[aHostName]
+            for key in colourKeys:
+                if key in config:
+                    self.__terminalColour = config[key][0]
+
+            debug("COLOUR: %s" % (self.__terminalColour))
+
+    @property
+    def _terminalColour(self):
+        return ' '.join(self.__terminalColour) if self.__terminalColour else ''
+
+    @property
     def env(self):
         return [ ]
-
-    def args(self, aProgram, aTitle, aArgs):
-        return [ "gnome-terminal",
-                 "--profile=Remote",
-                 "--title=" + aTitle,
-                 "-x",
-                 aProgram ] + aArgs
-
-    def spawn(self, aArgs):
-        os.execvp(aArgs[0], aArgs)
-        return None
-
-class Xfce4Terminal:
-
-    def __init__(self):
-        pass
-
-    def env(self):
-        return [ ( "XDG_CONFIG_HOME",
-                   os.environ["HOME"] + "/.remote-terminal-config" ) ]
-
-    def args(self, aProgram, aTitle, aArgs):
-        return [ "xfce4-terminal",
-                 "--disable-server",
-                 "--title=" + aTitle,
-                 "-x",
-                 aProgram ] + aArgs
 
     def spawn(self, aArgs):
         return os.spawnvp(os.P_NOWAIT, aArgs[0], aArgs)
 
-class NoTerminal:
+###############################################################################
+class GnomeTerminal(Terminal):
 
-    def __init__(self):
-        pass
+    # Setting Gnome terminal colours via .Xdefaults
+    # http://curtisfree.com/blog/2012/03/24/convert_gnome_terminal_colors_x_resources
+    def __init__(self, aSshConfig, aHostName):
+        super(GnomeTerminal, self).__init__(aSshConfig, aHostName)
 
+    @property
+    def name(self):
+        return "gnome"
+
+    def args(self, aProgram, aTitle, aArgs):
+
+        terminalColour = self._terminalColour
+
+        return (
+            [ "gnome-terminal" ] +
+            ( [ "--profile=" + terminalColour ] if terminalColour else [ ] ) +
+            [ "--title=" + aTitle, "-x", aProgram ] + aArgs )
+
+###############################################################################
+class Xfce4Terminal(Terminal):
+
+    def __init__(self, aSshConfig, aHostName):
+        super(Xfce4Terminal, self).__init__(aSshConfig, aHostName)
+
+    @property
+    def name(self):
+        return "xfce4"
+
+    @property
     def env(self):
-        return [ ]
+
+        terminalColour = self._terminalColour
+
+        if len(terminalColour) >= 2 and terminalColour[0:2] == "~" + os.sep:
+            terminalColour = os.environ["HOME"] + os.sep + terminalColour[2:]
+
+        return [ ( "XDG_CONFIG_HOME", terminalColour ) ]
+
+    def args(self, aProgram, aTitle, aArgs):
+        return (
+            [ "xfce4-terminal" ] +
+            ( [ "--disable-server" ] if self._terminalColour else [ ] ) +
+            [ "--title=" + aTitle, "-x", aProgram ] + aArgs )
+
+###############################################################################
+class OsxTerminal(Terminal):
+
+    def __init__(self, aSshConfig, aHostName):
+        super(OsxTerminal, self).__init__(aSshConfig, aHostName)
+
+    @property
+    def name(self):
+        return "osx"
+
+    @staticmethod
+    def __quote(text):
+        return text.replace('\\', r'\\').replace(r'"', r'\"')
+
+    def args(self, aProgram, aTitle, aArgs):
+
+        terminalColour = self._terminalColour
+
+        if not terminalColour:
+            colourCmd = ''
+
+        else:
+            textColour = ( 'osascript -e "' +
+                'tell application \\\"Terminal\\\" to ' +
+                'set normal text color of window 1 to ' + terminalColour + '"' )
+
+            colourCmd = (
+                '"' + OsxTerminal.__quote(textColour) + '"' + ' & " ; " & ')
+
+        titleText = OsxTerminal.__quote(aTitle)
+
+        terminalTitle = ( 'osascript -e "' +
+                'tell application \\\"Terminal\\\" to ' +
+                'set custom title of window 1 to \\\"' + titleText + '\\\""' )
+
+        titleCmd = (
+                '"' + OsxTerminal.__quote(terminalTitle) + '"' + ' & " ; " & ')
+
+        return [ "osascript",
+                 "-e",
+                 'tell application "Terminal" to do script ' +
+                 colourCmd +
+                 titleCmd +
+                 '"exec' +
+                 ''.join([ ('" & " " & quoted form of "' +
+                                OsxTerminal.__quote(arg))
+                          for arg in [ aProgram ] + aArgs ]) + '"',
+                 "-e",
+                 'return' ]
+
+###############################################################################
+class PlainTerminal(Terminal):
+
+    def __init__(self, aSshConfig, aHostName):
+        super(PlainTerminal, self).__init__(aSshConfig, aHostName)
+
+    @property
+    def name(self):
+        return "plain"
 
     def args(self, aProgram, aTitle, aArgs):
         return [ aProgram ] + aArgs
@@ -60,6 +329,30 @@ class NoTerminal:
         os.execvp(aArgs[0], aArgs)
         return None
 
+###############################################################################
+# Terminal factory function
+#
+# This is the factory function that inspects the runtime environment
+# and returns the matching kind of terminal.
+
+class TerminalFactory:
+
+    @staticmethod
+    def createTerminal(aSshConfig, aHostName):
+        if sys.platform == 'darwin':
+            return OsxTerminal(aSshConfig, aHostName)
+
+        colorterm = os.getenv("COLORTERM")
+
+        if colorterm == "xfce4-terminal":
+            return Xfce4Terminal(aSshConfig, aHostName)
+
+        if colorterm == "gnome-terminal":
+            return GnomeTerminal(aSshConfig, aHostName)
+
+        return PlainTerminal(aSshConfig, aHostName)
+
+###############################################################################
 bindir = os.path.dirname(os.path.abspath(__file__))
 binfile = os.path.basename(os.path.abspath(__file__))
 
@@ -75,17 +368,10 @@ binexe = [ os.path.join(path, binfile)
 if not binexe:
     die("%s not found in %s" % (binfile, binpath))
 
-colorterm = os.getenv("COLORTERM")
-
-if colorterm == "xfce4-terminal":
-    terminal = Xfce4Terminal()
-elif colorterm == "gnome-terminal":
-    terminal = GnomeTerminal()
-else:
-    terminal = NoTerminal()
+sshConfig = SshConfig()
 
 argopt = [ ]
-arg0 = sys.argv.pop(0)
+arg0   = sys.argv.pop(0)
 argset = set( [ '-b', '-c', '-D', '-e', '-F', '-I', '-i', '-L',
                 '-l', '-m', '-O', '-o', '-p', '-R', '-S', '-W', '-w' ] )
 
@@ -98,19 +384,27 @@ while len(sys.argv) != 0 and sys.argv[0][:1] == '-':
             argopt.append(sys.argv.pop(0))
     pass
 
+if len(sys.argv) == 0:
+    hostName = None
+else:
+    hostName    = sys.argv[0]
+    hostNamePos = 1 + hostName.find('@')
+    if hostNamePos > 0:
+        hostName = hostName[hostNamePos:]
+
 if len(sys.argv) != 1:
+    terminal = PlainTerminal(sshConfig, hostName)
     sys.argv = [ binexe ] + argopt + sys.argv
 else:
-    for name,value in terminal.env():
+    terminal = TerminalFactory.createTerminal(sshConfig, hostName)
+    for name,value in terminal.env:
         os.environ[name] = value
-        if os.getenv("DEBUGSSH") != None:
-            sys.stderr.write('export %s=%s\n' % (name, value))
-    sys.argv = terminal.args(binexe, 
+        debug("EXPORT %s=%s" % (name, value))
+    sys.argv = terminal.args(binexe,
                              ' '.join(str(arg) for arg in sys.argv),
                              argopt + sys.argv)
 
-if os.getenv("DEBUGSSH") != None:
-    sys.stderr.write(' '.join(str(arg) for arg in sys.argv) + '\n')
+debug("EXEC: %s" % (' '.join(str(arg) for arg in sys.argv)))
 
 if terminal.spawn(sys.argv) is None:
     die("Unable to exec %s" % (sys.argv[0]))
