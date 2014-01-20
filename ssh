@@ -273,7 +273,7 @@ class OsxTerminal(Terminal):
         return "osx"
 
     @staticmethod
-    def __quote(text):
+    def _quote(text):
         return text.replace('\\', r'\\').replace(r'"', r'\"')
 
     def args(self, aProgram, aTitle, aArgs):
@@ -289,16 +289,16 @@ class OsxTerminal(Terminal):
                 'set normal text color of window 1 to ' + terminalColour + '"' )
 
             colourCmd = (
-                '"' + OsxTerminal.__quote(textColour) + '"' + ' & " ; " & ')
+                '"' + OsxTerminal._quote(textColour) + '"' + ' & " ; " & ')
 
-        titleText = OsxTerminal.__quote(aTitle)
+        titleText = OsxTerminal._quote(aTitle)
 
         terminalTitle = ( 'osascript -e "' +
                 'tell application \\\"Terminal\\\" to ' +
                 'set custom title of window 1 to \\\"' + titleText + '\\\""' )
 
         titleCmd = (
-                '"' + OsxTerminal.__quote(terminalTitle) + '"' + ' & " ; " & ')
+                '"' + OsxTerminal._quote(terminalTitle) + '"' + ' & " ; " & ')
 
         return [ "osascript",
                  "-e",
@@ -307,10 +307,46 @@ class OsxTerminal(Terminal):
                  titleCmd +
                  '"exec' +
                  ''.join([ ('" & " " & quoted form of "' +
-                                OsxTerminal.__quote(arg))
+                                OsxTerminal._quote(arg))
                           for arg in [ aProgram ] + aArgs ]) + '"',
                  "-e",
                  'return' ]
+
+###############################################################################
+class OsxITerm(OsxTerminal):
+
+    def __init__(self, aSshConfig, aHostName):
+        super(OsxTerminal, self).__init__(aSshConfig, aHostName)
+
+    def args(self, aProgram, aTitle, aArgs):
+
+        terminalColour = self._terminalColour
+
+        if not terminalColour:
+            colourCmd = [ ]
+
+        else:
+            colourCmd = [
+                '-e', 'set foreground color to ' + terminalColour ]
+
+        titleCmd = [
+                '-e', 'set name to "' + OsxTerminal._quote(aTitle) + '"']
+
+        return ( [ "osascript",
+                   "-e",
+                   'tell application "iTerm" to ' +
+                   'tell ( make new terminal ) to ' +
+                   'tell ( make new session )' ] +
+                 colourCmd +
+                 titleCmd +
+                 [ "-e",
+                   'exec command ' +
+                   ' & " " & '.join([ '"' + OsxTerminal._quote(arg) + '"'
+                                      for arg in [ aProgram ] + aArgs ]),
+                   "-e",
+                   'end tell',
+                   "-e",
+                   'return' ] )
 
 ###############################################################################
 class PlainTerminal(Terminal):
@@ -340,15 +376,23 @@ class TerminalFactory:
     @staticmethod
     def createTerminal(aSshConfig, aHostName):
         if sys.platform == 'darwin':
-            return OsxTerminal(aSshConfig, aHostName)
 
-        colorterm = os.getenv("COLORTERM")
+            termprogram = os.getenv("TERM_PROGRAM")
 
-        if colorterm == "xfce4-terminal":
-            return Xfce4Terminal(aSshConfig, aHostName)
+            if termprogram == "Apple_Terminal":
+                return OsxTerminal(aSshConfig, aHostName)
 
-        if colorterm == "gnome-terminal":
-            return GnomeTerminal(aSshConfig, aHostName)
+            if termprogram == "iTerm.app":
+                return OsxITerm(aSshConfig, aHostName)
+
+        else:
+            colorterm = os.getenv("COLORTERM")
+
+            if colorterm == "xfce4-terminal":
+                return Xfce4Terminal(aSshConfig, aHostName)
+
+            if colorterm == "gnome-terminal":
+                return GnomeTerminal(aSshConfig, aHostName)
 
         return PlainTerminal(aSshConfig, aHostName)
 
