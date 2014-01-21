@@ -171,7 +171,7 @@ class SshConfig:
             for hostIndex, hostPatterns in self._hostName:
                 for hostPattern in hostPatterns:
                     if fnmatch(aHost, hostPattern):
-                        hostList.insert(0, hostIndex)
+                        hostList.append(hostIndex)
                         break
                     pass
                 pass
