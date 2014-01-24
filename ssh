@@ -16,6 +16,27 @@ def die(msg):
     sys.stderr.write("%s: %s\n" % ( sys.argv[0], msg ))
     exit(1)
 
+def program():
+    return ( os.path.dirname(os.path.abspath(__file__)),
+             os.path.basename(os.path.abspath(__file__)) )
+
+def which(name):
+    bindir, binfile = program()
+
+    if name is not None:
+        binfile = name
+
+    binpath = os.pathsep.join([
+        dir
+        for dir in os.environ["PATH"].split(os.pathsep)
+        if dir != bindir ])
+
+    binexe = [ os.path.join(path, binfile)
+               for path in binpath.split(os.pathsep)
+               if os.path.isfile(os.path.join(path, binfile)) ].pop()
+
+    return ( binexe, binpath )
+
 ###############################################################################
 class SshConfig:
 
@@ -397,36 +418,101 @@ class TerminalFactory:
         return PlainTerminal(aSshConfig, aHostName)
 
 ###############################################################################
-bindir = os.path.dirname(os.path.abspath(__file__))
-binfile = os.path.basename(os.path.abspath(__file__))
+class Application(object):
 
-binpath = os.pathsep.join([
-    dir
-    for dir in os.environ["PATH"].split(os.pathsep)
-    if dir != bindir ])
+    def __init__(self):
+        pass
 
-binexe = [ os.path.join(path, binfile)
-           for path in binpath.split(os.pathsep)
-           if os.path.isfile(os.path.join(path, binfile)) ].pop()
+    def _argOptions(self):
+        return set()
+
+    def stripOptions(self):
+
+        # Strip and return the options from sys.argv[] leaving only
+        # the arguments that do not represent options in sys.argv[]
+
+        argopt = [ ]
+        argset = self._argOptions()
+
+        while len(sys.argv) != 0 and sys.argv[0][:1] == '-':
+            argopt.append(sys.argv.pop(0))
+            if argopt[-1] == '--':
+                break
+            elif argopt[-1] in argset:
+                if len(sys.argv) != 0:
+                    argopt.append(sys.argv.pop(0))
+            pass
+
+        return argopt
+
+###############################################################################
+class SshApplication(Application):
+
+    def __init__(self):
+        super(SshApplication, self).__init__()
+
+    def _argOptions(self):
+        return set( [ '-b', '-c', '-D', '-e', '-F', '-I', '-i', '-L',
+                      '-l', '-m', '-O', '-o', '-p', '-R', '-S', '-W', '-w' ] )
+
+###############################################################################
+class MoshApplication(Application):
+
+    def __init__(self):
+        super(MoshApplication, self).__init__()
+
+    def _argOptions(self):
+        return set( [ '-p' ] )
+
+    def stripOptions(self):
+
+        argopt = super(MoshApplication, self).stripOptions()
+
+        sshfile         = "ssh"
+        sshexe, sshpath = which(sshfile)
+
+        if not sshexe:
+            die("%s not found in %s" % (sshfile, sshpath))
+
+        sshopt = [ "--ssh=" + sshexe ]
+
+        for arg in argopt:
+            if re.match("--ssh=", arg) != None:
+                sshopt = [ ]
+                break
+
+        return argopt + sshopt
+
+###############################################################################
+# Application Factory
+#
+# This is the factory function that inspects the name of the program
+# and returns the matching kind of application.
+
+class ApplicationFactory:
+
+    @staticmethod
+    def createApplication(aAppName):
+
+        if aAppName == "ssh":
+            return SshApplication()
+
+        if aAppName == "mosh":
+            return MoshApplication()
+
+        return None
+
+###############################################################################
+bindir, binfile = program()
+binexe, binpath = which(None)
 
 if not binexe:
     die("%s not found in %s" % (binfile, binpath))
 
-sshConfig = SshConfig()
-
-argopt = [ ]
-arg0   = sys.argv.pop(0)
-argset = set( [ '-b', '-c', '-D', '-e', '-F', '-I', '-i', '-L',
-                '-l', '-m', '-O', '-o', '-p', '-R', '-S', '-W', '-w' ] )
-
-while len(sys.argv) != 0 and sys.argv[0][:1] == '-':
-    argopt.append(sys.argv.pop(0))
-    if argopt[-1] == '--':
-        break
-    elif argopt[-1] in argset:
-        if len(sys.argv) != 0:
-            argopt.append(sys.argv.pop(0))
-    pass
+sshConfig   = SshConfig()
+application = ApplicationFactory.createApplication(binfile)
+arg0        = sys.argv.pop(0)
+argopt      = application.stripOptions()
 
 if len(sys.argv) == 0:
     hostName = None
@@ -448,7 +534,7 @@ else:
                              ' '.join(str(arg) for arg in sys.argv),
                              argopt + sys.argv)
 
-debug("EXEC: %s" % (' '.join(str(arg) for arg in sys.argv)))
+debug("EXEC: %s" % (' '.join("'%s'" % (arg) for arg in sys.argv)))
 
 if terminal.spawn(sys.argv) is None:
     die("Unable to exec %s" % (sys.argv[0]))
