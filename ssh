@@ -468,20 +468,26 @@ class MoshApplication(Application):
 
         argopt = super(MoshApplication, self).stripOptions()
 
-        sshfile         = "ssh"
-        sshexe, sshpath = which(sshfile)
+        appopt = [ ]
+        for filename, fileopt in [ ( "ssh",         "--ssh=" ),
+                                   ( "mosh-client", "--client=" ) ]:
 
-        if not sshexe:
-            die("%s not found in %s" % (sshfile, sshpath))
+            fileexe, filepath = which(filename)
 
-        sshopt = [ "--ssh=" + sshexe ]
+            if not fileexe:
+                die("%s not found in %s" % (filename, filepath))
 
-        for arg in argopt:
-            if re.match("--ssh=", arg) != None:
-                sshopt = [ ]
-                break
+            filearg = [ fileopt + fileexe ]
 
-        return argopt + sshopt
+            for arg in argopt:
+                if len(fileopt) <= len(arg):
+                    if arg[:len(fileopt)] == fileopt:
+                        filearg = [ ]
+                        break
+
+            appopt += filearg
+
+        return argopt + appopt
 
 ###############################################################################
 # Application Factory
