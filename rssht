@@ -6,10 +6,11 @@ import errno
 import re
 from fnmatch import fnmatch
 
-SSHDEBUG = os.getenv("SSHDEBUG") != None
+RSSHTDEBUG  = os.getenv("RSSHTDEBUG") != None
+RSSHTPREFIX = '#@-rssht-'
 
 def debug(msg):
-    if SSHDEBUG:
+    if RSSHTDEBUG:
         sys.stderr.write("+ %s\n" % (msg))
 
 def die(msg):
@@ -36,6 +37,32 @@ def which(name):
                if os.path.isfile(os.path.join(path, binfile)) ].pop()
 
     return ( binexe, binpath )
+
+###############################################################################
+class RsshtKey:
+
+    # This class models a key that can be used to look up an rssht entry
+    # in an ssh configuration file.
+
+    def __init__(self, aName, aPrefix = None):
+        if aPrefix is None:
+            aPrefix = RSSHTPREFIX
+        elif ( RSSHTPREFIX != aPrefix or
+               aName[:len(RSSHTPREFIX)] != RSSHTPREFIX ):
+            raise KeyError
+        else:
+            aPrefix = ''
+
+        self._name = aPrefix + aName
+
+    def __str__(self):
+        return self._name
+
+    def __eq__(self, other):
+        return self._name == other._name
+
+    def __hash__(self):
+        return hash(self._name)
 
 ###############################################################################
 class SshConfig:
@@ -160,8 +187,13 @@ class SshConfig:
             key = words[0]
             val = words[1:]
 
-            if key[0] == '#' and ( len(key) == 1 or key[1] != '@' ):
-                continue
+            if key[0] == '#':
+                if len(key) == 1:
+                    continue
+                try:
+                    key = RsshtKey(key, RSSHTPREFIX)
+                except KeyError:
+                    continue
 
             if len(words) < 2:
                 die("Malformed configuration at line %d: '%s'" %
@@ -216,7 +248,7 @@ class Terminal(object):
 
             terminalName = self.name[0].upper() + self.name[1:]
             colourKeys  = [
-                '#@' + terminalName + '-' + colour for colour in
+                RsshtKey(terminalName + '-' + colour) for colour in
                 [ 'ColourScheme', 'ColorScheme' ] ]
             config = aSshConfig[aHostName]
             for key in colourKeys:
