@@ -321,6 +321,16 @@ class Terminal(object):
         return self.__terminalGeometry
 
     @property
+    def _terminalWidth(self):
+        return ( self.__terminalGeometry.width
+                 if self.__terminalGeometry else None )
+
+    @property
+    def _terminalHeight(self):
+        return ( self.__terminalGeometry.height
+                 if self.__terminalGeometry else None )
+
+    @property
     def env(self):
         return [ ]
 
@@ -441,13 +451,32 @@ class OsxITerm(OsxTerminal):
             colourCmd = [
                 '-e', 'set foreground color to ' + terminalColour ]
 
+        terminalWidth = self._terminalWidth
+
+        if not terminalWidth:
+            widthCmd = [ ]
+        else:
+            widthCmd = [
+                '-e' 'set number of columns to ' + terminalWidth ]
+
+        terminalHeight = self._terminalHeight
+
+        if not terminalHeight:
+            heightCmd = [ ]
+        else:
+            heightCmd = [
+                '-e' 'set number of rows to ' + terminalHeight ]
+
         titleCmd = [
                 '-e', 'set name to "' + OsxTerminal._quote(aTitle) + '"']
 
         return ( [ "osascript",
                    "-e",
                    'tell application "iTerm" to ' +
-                   'tell ( make new terminal ) to ' +
+                   'tell ( make new terminal )' ] +
+                 widthCmd +
+                 heightCmd +
+                 [ "-e",
                    'tell ( make new session )' ] +
                  colourCmd +
                  titleCmd +
@@ -455,6 +484,8 @@ class OsxITerm(OsxTerminal):
                    'exec command ' +
                    ' & " " & '.join([ '"' + OsxTerminal._quote(arg) + '"'
                                       for arg in [ aProgram ] + aArgs ]),
+                   "-e",
+                   'end tell',
                    "-e",
                    'end tell',
                    "-e",
