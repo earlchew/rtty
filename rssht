@@ -413,6 +413,32 @@ class OsxTerminal(Terminal):
             colourCmd = (
                 '"' + OsxTerminal._quote(textColour) + '"' + ' & " ; " & ')
 
+        terminalWidth = self._terminalWidth
+
+        if not terminalWidth:
+            widthCmd = ''
+
+        else:
+            windowWidth = ( 'osascript -e "' +
+                'tell application \\\"Terminal\\\" to ' +
+                'set number of columns of window 1 to ' + terminalWidth + '"' )
+
+            widthCmd = (
+                '"' + OsxTerminal._quote(windowWidth) + '"' + ' & " ; " & ')
+
+        terminalHeight = self._terminalHeight
+
+        if not terminalHeight:
+            heightCmd = ''
+
+        else:
+            windowHeight = ( 'osascript -e "' +
+                'tell application \\\"Terminal\\\" to ' +
+                'set number of rows of window 1 to ' + terminalHeight + '"' )
+
+            heightCmd = (
+                '"' + OsxTerminal._quote(windowHeight) + '"' + ' & " ; " & ')
+
         titleText = OsxTerminal._quote(aTitle)
 
         terminalTitle = ( 'osascript -e "' +
@@ -425,6 +451,8 @@ class OsxTerminal(Terminal):
         return [ "osascript",
                  "-e",
                  'tell application "Terminal" to do script ' +
+                 widthCmd +
+                 heightCmd +
                  colourCmd +
                  titleCmd +
                  '"exec' +
