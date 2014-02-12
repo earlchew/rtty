@@ -6,6 +6,7 @@ import errno
 import re
 from fnmatch import fnmatch
 
+ARG0        = sys.argv.pop(0)
 RSSHTDEBUG  = os.getenv("RSSHTDEBUG") != None
 RSSHTPREFIX = '#@-rssht-'
 
@@ -14,7 +15,7 @@ def debug(msg):
         sys.stderr.write("+ %s\n" % (msg))
 
 def die(msg):
-    sys.stderr.write("%s: %s\n" % ( sys.argv[0], msg ))
+    sys.stderr.write("%s: %s\n" % ( ARG0, msg ))
     exit(1)
 
 def program():
@@ -37,6 +38,43 @@ def which(name):
                if os.path.isfile(os.path.join(path, binfile)) ].pop()
 
     return ( binexe, binpath )
+
+###############################################################################
+class Geometry:
+
+    # This class models an X11 geometry setting for terminals.
+
+    def __init__(self, aGeometry):
+        match = re.match(
+            r'(\d+)x(\d+)(([+-]\d+)([+-]\d+))?$|([+-]\d+)([+-]\d+)$', aGeometry)
+
+        if match is None:
+            raise ValueError
+
+        self._geometry = aGeometry
+        self._width    = match.group(1)
+        self._height   = match.group(2)
+        self._xoff     = match.group(4) or match.group(6)
+        self._yoff     = match.group(5) or match.group(7)
+
+    @property
+    def width(self):
+        return self._width
+
+    @property
+    def height(self):
+        return self._height
+
+    @property
+    def xoff(self):
+        return self._xoff
+
+    @property
+    def yoff(self):
+        return self._yoff
+
+    def __str__(self):
+        return self._geometry
 
 ###############################################################################
 class RsshtKey:
@@ -453,7 +491,7 @@ class TerminalFactory:
 class Application(object):
 
     def __init__(self):
-        pass
+        self._geometry = None
 
     def _argOptions(self):
         return set()
@@ -467,12 +505,24 @@ class Application(object):
         argset = self._argOptions()
 
         while len(sys.argv) != 0 and sys.argv[0][:1] == '-':
-            argopt.append(sys.argv.pop(0))
-            if argopt[-1] == '--':
-                break
-            elif argopt[-1] in argset:
-                if len(sys.argv) != 0:
-                    argopt.append(sys.argv.pop(0))
+            if sys.argv[0] == '-geometry':
+                sys.argv.pop(0)
+                if len(sys.argv) == 0:
+                    die("Missing geometry")
+                else:
+                    geometry = sys.argv.pop(0)
+                    try:
+                        self._geometry = Geometry(geometry)
+                    except ValueError:
+                        die("Illegal geometry format: " + geometry)
+                    pass
+            else:
+                argopt.append(sys.argv.pop(0))
+                if argopt[-1] == '--':
+                    break
+                elif argopt[-1] in argset:
+                    if len(sys.argv) != 0:
+                        argopt.append(sys.argv.pop(0))
             pass
 
         return argopt
@@ -549,7 +599,6 @@ if not binexe:
 
 sshConfig   = SshConfig()
 application = ApplicationFactory.createApplication(binfile)
-arg0        = sys.argv.pop(0)
 argopt      = application.stripOptions()
 
 if len(sys.argv) == 0:
