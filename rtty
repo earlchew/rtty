@@ -67,30 +67,30 @@ class Geometry:
         if match is None:
             raise ValueError
 
-        self._geometry = aGeometry
-        self._width    = match.group(1)
-        self._height   = match.group(2)
-        self._xoff     = match.group(4) or match.group(6)
-        self._yoff     = match.group(5) or match.group(7)
+        self.__geometry = aGeometry
+        self.__width    = match.group(1)
+        self.__height   = match.group(2)
+        self.__xoff     = match.group(4) or match.group(6)
+        self.__yoff     = match.group(5) or match.group(7)
 
     @property
     def width(self):
-        return self._width
+        return self.__width
 
     @property
     def height(self):
-        return self._height
+        return self.__height
 
     @property
     def xoff(self):
-        return self._xoff
+        return self.__xoff
 
     @property
     def yoff(self):
-        return self._yoff
+        return self.__yoff
 
     def __str__(self):
-        return self._geometry
+        return self.__geometry
 
 ###############################################################################
 class SshKey:
@@ -107,16 +107,16 @@ class SshKey:
         else:
             aPrefix = ''
 
-        self._name = aPrefix + aName
+        self.__name = aPrefix + aName
 
     def __str__(self):
-        return self._name
+        return self.__name
 
     def __eq__(self, other):
-        return self._name == other._name
+        return self.__name == other.__name
 
     def __hash__(self):
-        return hash(self._name)
+        return hash(self.__name)
 
 ###############################################################################
 class Config(object):
@@ -216,9 +216,9 @@ class SshConfig(Config):
         hostIndex = 0
         lineNum = 0
 
-        self._hostName              = [ ]
-        self._hostConfig            = dict()
-        self._hostConfig[hostIndex] = dict()
+        self.__hostName              = [ ]
+        self.__hostConfig            = dict()
+        self.__hostConfig[hostIndex] = dict()
 
         homeDirectory = os.getenv("HOME")
 
@@ -263,13 +263,13 @@ class SshConfig(Config):
             debug("CONFIG: %s %s" % (key, val))
 
             if key != 'Host':
-                if key not in self._hostConfig[hostIndex]:
-                    self._hostConfig[hostIndex][key] = [ ]
-                self._hostConfig[hostIndex][key].append(val)
+                if key not in self.__hostConfig[hostIndex]:
+                    self.__hostConfig[hostIndex][key] = [ ]
+                self.__hostConfig[hostIndex][key].append(val)
             else:
                 hostIndex = hostIndex + 1
-                self._hostName.append( (hostIndex, val) )
-                self._hostConfig[hostIndex] = dict()
+                self.__hostName.append( (hostIndex, val) )
+                self.__hostConfig[hostIndex] = dict()
             pass
 
         cfgFile.close()
@@ -285,7 +285,7 @@ class SshConfig(Config):
 
         hostList = [ 0 ]
         if aHost is not None:
-            for hostIndex, hostPatterns in self._hostName:
+            for hostIndex, hostPatterns in self.__hostName:
                 for hostPattern in hostPatterns:
                     if fnmatch(aHost, hostPattern):
                         hostList.append(hostIndex)
@@ -297,7 +297,7 @@ class SshConfig(Config):
 
         for hostIndex in hostList:
             hostConfig = dict(
-                self._hostConfig[hostIndex].items() + hostConfig.items())
+                self.__hostConfig[hostIndex].items() + hostConfig.items())
 
         debug("HOST: %s" % (hostConfig))
         return hostConfig
@@ -308,8 +308,8 @@ class Terminal(object):
     def __init__(self, aGeometry, aConfig, aHostName):
         if aHostName is not None:
 
-            self.__terminalColour   = None
-            self.__terminalGeometry = aGeometry
+            self.__colour   = None
+            self.__geometry = aGeometry
 
             terminalName = self.name[0].upper() + self.name[1:]
 
@@ -320,41 +320,39 @@ class Terminal(object):
                 [ 'ColourScheme', 'ColorScheme' ] ]
             for key in colourKeys:
                 if key in config:
-                    self.__terminalColour = config[key][0]
+                    self.__colour = config[key][0]
 
-            debug("COLOUR: %s" % (self.__terminalColour))
+            debug("COLOUR: %s" % (self.__colour))
 
-            if self.__terminalGeometry is None:
+            if self.__geometry is None:
                 geometryKey = aConfig.createKey(terminalName + '-Geometry')
                 if geometryKey in config:
                     geometry = config[geometryKey][0][0]
                     try:
-                        self.__terminalGeometry = Geometry(geometry)
+                        self.__geometry = Geometry(geometry)
                     except:
                         die("Badly formatted geometry in %s: '%s'" %
                             (geometryKey, geometry))
                 pass
 
-            if self.__terminalGeometry is not None:
-                debug("GEOMETRY: %s" % (self.__terminalGeometry))
+            if self.__geometry is not None:
+                debug("GEOMETRY: %s" % (self.__geometry))
 
     @property
-    def _terminalColour(self):
-        return ' '.join(self.__terminalColour) if self.__terminalColour else ''
+    def _colour(self):
+        return ' '.join(self.__colour) if self.__colour else ''
 
     @property
-    def _terminalgeometry(self):
-        return self.__terminalGeometry
+    def _geometry(self):
+        return self.__geometry
 
     @property
-    def _terminalWidth(self):
-        return ( self.__terminalGeometry.width
-                 if self.__terminalGeometry else None )
+    def _width(self):
+        return self.__geometry.width if self.__geometry else None
 
     @property
-    def _terminalHeight(self):
-        return ( self.__terminalGeometry.height
-                 if self.__terminalGeometry else None )
+    def _height(self):
+        return self.__geometry.height if self.__geometry else None
 
     @property
     def env(self):
@@ -377,9 +375,9 @@ class GnomeTerminal(Terminal):
 
     def args(self, aProgram, aTitle, aArgs):
 
-        terminalColour = self._terminalColour
+        terminalColour = self._colour
 
-        geometry = self._terminalGeometry
+        geometry = self._geometry
         geometryOpt = [ "--geometry %s" % (geometry) ] if geometry else [ ]
 
         return (
@@ -401,7 +399,7 @@ class Xfce4Terminal(Terminal):
     @property
     def env(self):
 
-        terminalColour = self._terminalColour
+        terminalColour = self._colour
 
         if len(terminalColour) >= 2 and terminalColour[0:2] == "~" + os.sep:
             terminalColour = os.environ["HOME"] + os.sep + terminalColour[2:]
@@ -410,13 +408,13 @@ class Xfce4Terminal(Terminal):
 
     def args(self, aProgram, aTitle, aArgs):
 
-        geometry = self._terminalGeometry
+        geometry = self._geometry
         geometryOpt = [ "--geometry %s" % (geometry) ] if geometry else [ ]
 
         return (
             [ "xfce4-terminal" ] +
             geometryOpt +
-            ( [ "--disable-server" ] if self._terminalColour else [ ] ) +
+            ( [ "--disable-server" ] if self._colour else [ ] ) +
             [ "--title=" + aTitle, "-x", aProgram ] + aArgs )
 
 ###############################################################################
@@ -435,7 +433,7 @@ class OsxTerminal(Terminal):
 
     def args(self, aProgram, aTitle, aArgs):
 
-        terminalColour = self._terminalColour
+        terminalColour = self._colour
 
         if not terminalColour:
             colourCmd = ''
@@ -448,7 +446,7 @@ class OsxTerminal(Terminal):
             colourCmd = (
                 '"' + OsxTerminal._quote(textColour) + '"' + ' & " ; " & ')
 
-        terminalWidth = self._terminalWidth
+        terminalWidth = self._width
 
         if not terminalWidth:
             widthCmd = ''
@@ -461,7 +459,7 @@ class OsxTerminal(Terminal):
             widthCmd = (
                 '"' + OsxTerminal._quote(windowWidth) + '"' + ' & " ; " & ')
 
-        terminalHeight = self._terminalHeight
+        terminalHeight = self._height
 
         if not terminalHeight:
             heightCmd = ''
@@ -505,7 +503,7 @@ class OsxITerm(OsxTerminal):
 
     def args(self, aProgram, aTitle, aArgs):
 
-        terminalColour = self._terminalColour
+        terminalColour = self._colour
 
         if not terminalColour:
             colourCmd = [ ]
@@ -514,7 +512,7 @@ class OsxITerm(OsxTerminal):
             colourCmd = [
                 '-e', 'set foreground color to ' + terminalColour ]
 
-        terminalWidth = self._terminalWidth
+        terminalWidth = self._width
 
         if not terminalWidth:
             widthCmd = [ ]
@@ -522,7 +520,7 @@ class OsxITerm(OsxTerminal):
             widthCmd = [
                 '-e' 'set number of columns to ' + terminalWidth ]
 
-        terminalHeight = self._terminalHeight
+        terminalHeight = self._height
 
         if not terminalHeight:
             heightCmd = [ ]
@@ -606,23 +604,22 @@ class TerminalFactory:
 class Application(object):
 
     def __init__(self):
-        self._geometry    = None
-        self._interactive = None
-        self._options     = dict()
+        self.__geometry = None
+        self.__options  = dict()
 
     def _argOptions(self):
         return set()
 
     @property
     def geometry(self):
-        return self._geometry
+        return self.__geometry
 
     @property
     def interactive(self):
         return self._isInteractive
 
     def option(self, key):
-        return self._options[key] if key in self._options else None
+        return self.__options[key] if key in self.__options else None
 
     def stripOptions(self, aArgv):
 
@@ -641,21 +638,21 @@ class Application(object):
                 else:
                     geometry = aArgv.pop(0)
                     try:
-                        self._geometry = Geometry(geometry)
+                        self.__geometry = Geometry(geometry)
                     except ValueError:
                         die("Illegal geometry format: " + geometry)
                     pass
             else:
                 optkey = aArgv.pop(0)
                 argopt.append(optkey)
-                self._options[optkey] = [ ]
+                self.__options[optkey] = [ ]
                 if optkey == '--':
                     break
                 elif optkey in argset:
                     if len(aArgv) != 0:
                         optval = aArgv.pop(0)
                         argopt.append(optval)
-                        self._options[optkey] = [ optval ]
+                        self.__options[optkey] = [ optval ]
             pass
 
         return argopt
