@@ -353,8 +353,12 @@ class GnomeTerminal(Terminal):
 
         terminalColour = self._terminalColour
 
+        geometry = self._terminalGeometry
+        geometryOpt = [ "--geometry %s" % (geometry) ] if geometry else [ ]
+
         return (
             [ "gnome-terminal" ] +
+            geometryOpt +
             ( [ "--profile=" + terminalColour ] if terminalColour else [ ] ) +
             [ "--title=" + aTitle, "-x", aProgram ] + aArgs )
 
@@ -379,8 +383,13 @@ class Xfce4Terminal(Terminal):
         return [ ( "XDG_CONFIG_HOME", terminalColour ) ]
 
     def args(self, aProgram, aTitle, aArgs):
+
+        geometry = self._terminalGeometry
+        geometryOpt = [ "--geometry %s" % (geometry) ] if geometry else [ ]
+
         return (
             [ "xfce4-terminal" ] +
+            geometryOpt +
             ( [ "--disable-server" ] if self._terminalColour else [ ] ) +
             [ "--title=" + aTitle, "-x", aProgram ] + aArgs )
 
