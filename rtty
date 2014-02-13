@@ -119,7 +119,13 @@ class SshKey:
         return hash(self._name)
 
 ###############################################################################
-class SshConfig:
+class Config(object):
+
+    def __init__(self):
+        pass
+
+###############################################################################
+class SshConfig(Config):
 
     # This list of valid whitespace characters is extracted from
     # the ssh source code and is used to ensure that the interpretation
@@ -204,6 +210,7 @@ class SshConfig:
         return words
 
     def __init__(self):
+        super(SshConfig, self).__init__()
 
         hostName = ''
         hostIndex = 0
@@ -267,6 +274,9 @@ class SshConfig:
 
         cfgFile.close()
 
+    def createKey(self, aName):
+        return SshKey(aName)
+
     def __getitem__(self, aHost):
 
         # Construct a list of configuration entries to be applied to this
@@ -295,7 +305,7 @@ class SshConfig:
 ###############################################################################
 class Terminal(object):
 
-    def __init__(self, aGeometry, aSshConfig, aHostName):
+    def __init__(self, aGeometry, aConfig, aHostName):
         if aHostName is not None:
 
             self.__terminalColour   = None
@@ -303,10 +313,10 @@ class Terminal(object):
 
             terminalName = self.name[0].upper() + self.name[1:]
 
-            config = aSshConfig[aHostName]
+            config = aConfig[aHostName]
 
             colourKeys  = [
-                SshKey(terminalName + '-' + colour) for colour in
+                aConfig.createKey(terminalName + '-' + colour) for colour in
                 [ 'ColourScheme', 'ColorScheme' ] ]
             for key in colourKeys:
                 if key in config:
@@ -315,7 +325,7 @@ class Terminal(object):
             debug("COLOUR: %s" % (self.__terminalColour))
 
             if self.__terminalGeometry is None:
-                geometryKey = SshKey(terminalName + '-Geometry')
+                geometryKey = aConfig.createKey(terminalName + '-Geometry')
                 if geometryKey in config:
                     geometry = config[geometryKey][0][0]
                     try:
@@ -358,8 +368,8 @@ class GnomeTerminal(Terminal):
 
     # Setting Gnome terminal colours via .Xdefaults
     # http://curtisfree.com/blog/2012/03/24/convert_gnome_terminal_colors_x_resources
-    def __init__(self, aGeometry, aSshConfig, aHostName):
-        super(GnomeTerminal, self).__init__(aGeometry, aSshConfig, aHostName)
+    def __init__(self, aGeometry, aConfig, aHostName):
+        super(GnomeTerminal, self).__init__(aGeometry, aConfig, aHostName)
 
     @property
     def name(self):
@@ -381,8 +391,8 @@ class GnomeTerminal(Terminal):
 ###############################################################################
 class Xfce4Terminal(Terminal):
 
-    def __init__(self, aGeometry, aSshConfig, aHostName):
-        super(Xfce4Terminal, self).__init__(aGeometry, aSshConfig, aHostName)
+    def __init__(self, aGeometry, aConfig, aHostName):
+        super(Xfce4Terminal, self).__init__(aGeometry, aConfig, aHostName)
 
     @property
     def name(self):
@@ -412,8 +422,8 @@ class Xfce4Terminal(Terminal):
 ###############################################################################
 class OsxTerminal(Terminal):
 
-    def __init__(self, aGeometry, aSshConfig, aHostName):
-        super(OsxTerminal, self).__init__(aGeometry, aSshConfig, aHostName)
+    def __init__(self, aGeometry, aConfig, aHostName):
+        super(OsxTerminal, self).__init__(aGeometry, aConfig, aHostName)
 
     @property
     def name(self):
@@ -490,8 +500,8 @@ class OsxTerminal(Terminal):
 ###############################################################################
 class OsxITerm(OsxTerminal):
 
-    def __init__(self, aGeometry, aSshConfig, aHostName):
-        super(OsxTerminal, self).__init__(aGeometry, aSshConfig, aHostName)
+    def __init__(self, aGeometry, aConfig, aHostName):
+        super(OsxTerminal, self).__init__(aGeometry, aConfig, aHostName)
 
     def args(self, aProgram, aTitle, aArgs):
 
@@ -547,8 +557,8 @@ class OsxITerm(OsxTerminal):
 ###############################################################################
 class PlainTerminal(Terminal):
 
-    def __init__(self, aSshConfig, aHostName):
-        super(PlainTerminal, self).__init__(None, aSshConfig, aHostName)
+    def __init__(self, aConfig, aHostName):
+        super(PlainTerminal, self).__init__(None, aConfig, aHostName)
 
     @property
     def name(self):
@@ -570,27 +580,27 @@ class PlainTerminal(Terminal):
 class TerminalFactory:
 
     @staticmethod
-    def createTerminal(aGeometry, aSshConfig, aHostName):
+    def createTerminal(aGeometry, aConfig, aHostName):
         if sys.platform == 'darwin':
 
             termprogram = os.getenv("TERM_PROGRAM")
 
             if termprogram == "Apple_Terminal":
-                return OsxTerminal(aGeometry, aSshConfig, aHostName)
+                return OsxTerminal(aGeometry, aConfig, aHostName)
 
             if termprogram == "iTerm.app":
-                return OsxITerm(aGeometry, aSshConfig, aHostName)
+                return OsxITerm(aGeometry, aConfig, aHostName)
 
         else:
             colorterm = os.getenv("COLORTERM")
 
             if colorterm == "xfce4-terminal":
-                return Xfce4Terminal(aGeometry, aSshConfig, aHostName)
+                return Xfce4Terminal(aGeometry, aConfig, aHostName)
 
             if colorterm == "gnome-terminal":
-                return GnomeTerminal(aGeometry, aSshConfig, aHostName)
+                return GnomeTerminal(aGeometry, aConfig, aHostName)
 
-        return PlainTerminal(aSshConfig, aHostName)
+        return PlainTerminal(aConfig, aHostName)
 
 ###############################################################################
 class Application(object):
@@ -655,6 +665,8 @@ class SshApplication(Application):
     def __init__(self):
         super(SshApplication, self).__init__()
 
+        self.__config = SshConfig()
+
     def _argOptions(self):
         return set( [ '-b', '-c', '-D', '-e', '-F', '-I', '-i', '-L',
                       '-l', '-m', '-O', '-o', '-p', '-R', '-S', '-W', '-w' ] )
@@ -663,11 +675,21 @@ class SshApplication(Application):
     def _isInteractive(self):
         return self.option('-t') is not None
 
+    @property
+    def configuration(self):
+        return self.__config
+
 ###############################################################################
 class MoshApplication(Application):
 
     def __init__(self):
         super(MoshApplication, self).__init__()
+
+        self.__config = SshConfig()
+
+    @property
+    def configuration(self):
+        return self.__config
 
     @property
     def _isInteractive(self):
@@ -727,8 +749,8 @@ binexe, binpath = which(None)
 if not binexe:
     die("%s not found in %s" % (binfile, binpath))
 
-sshConfig   = SshConfig()
 application = ApplicationFactory.createApplication(binfile)
+config      = application.configuration
 argopt      = application.stripOptions()
 
 if len(sys.argv) == 0:
@@ -740,11 +762,11 @@ else:
         hostName = hostName[hostNamePos:]
 
 if len(sys.argv) != 1 and not application.interactive:
-    terminal = PlainTerminal(sshConfig, hostName)
+    terminal = PlainTerminal(config, hostName)
     sys.argv = [ binexe ] + argopt + sys.argv
 else:
     geometry = application.geometry
-    terminal = TerminalFactory.createTerminal(geometry, sshConfig, hostName)
+    terminal = TerminalFactory.createTerminal(geometry, config, hostName)
     for name,value in terminal.env:
         os.environ[name] = value
         debug("EXPORT %s=%s" % (name, value))
