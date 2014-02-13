@@ -624,35 +624,36 @@ class Application(object):
     def option(self, key):
         return self._options[key] if key in self._options else None
 
-    def stripOptions(self):
+    def stripOptions(self, aArgv):
 
-        # Strip and return the options from sys.argv[] leaving only
-        # the arguments that do not represent options in sys.argv[]
+        # Strip and return the options from argument list leaving only
+        # the arguments that do not represent options. Return the stripped
+        # options.
 
         argopt = [ ]
         argset = self._argOptions()
 
-        while len(sys.argv) != 0 and sys.argv[0][:1] == '-':
-            if sys.argv[0] == '-geometry':
-                sys.argv.pop(0)
-                if len(sys.argv) == 0:
+        while len(aArgv) != 0 and aArgv[0][:1] == '-':
+            if aArgv[0] == '-geometry':
+                aArgv.pop(0)
+                if len(aArgv) == 0:
                     die("Missing geometry")
                 else:
-                    geometry = sys.argv.pop(0)
+                    geometry = aArgv.pop(0)
                     try:
                         self._geometry = Geometry(geometry)
                     except ValueError:
                         die("Illegal geometry format: " + geometry)
                     pass
             else:
-                optkey = sys.argv.pop(0)
+                optkey = aArgv.pop(0)
                 argopt.append(optkey)
                 self._options[optkey] = [ ]
                 if optkey == '--':
                     break
                 elif optkey in argset:
-                    if len(sys.argv) != 0:
-                        optval = sys.argv.pop(0)
+                    if len(aArgv) != 0:
+                        optval = aArgv.pop(0)
                         argopt.append(optval)
                         self._options[optkey] = [ optval ]
             pass
@@ -698,9 +699,9 @@ class MoshApplication(Application):
     def _argOptions(self):
         return set( [ '-p' ] )
 
-    def stripOptions(self):
+    def stripOptions(self, aArgv):
 
-        argopt = super(MoshApplication, self).stripOptions()
+        argopt = super(MoshApplication, self).stripOptions(aArgv)
 
         appopt = [ ]
         for filename, fileopt in [ ( "ssh",         "--ssh=" ),
@@ -751,7 +752,7 @@ if not binexe:
 
 application = ApplicationFactory.createApplication(binfile)
 config      = application.configuration
-argopt      = application.stripOptions()
+argopt      = application.stripOptions(sys.argv)
 
 if len(sys.argv) == 0:
     hostName = None
