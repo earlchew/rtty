@@ -596,7 +596,9 @@ class TerminalFactory:
 class Application(object):
 
     def __init__(self):
-        self._geometry = None
+        self._geometry    = None
+        self._interactive = None
+        self._options     = dict()
 
     def _argOptions(self):
         return set()
@@ -604,6 +606,13 @@ class Application(object):
     @property
     def geometry(self):
         return self._geometry
+
+    @property
+    def interactive(self):
+        return self._isInteractive
+
+    def option(self, key):
+        return self._options[key] if key in self._options else None
 
     def stripOptions(self):
 
@@ -626,12 +635,16 @@ class Application(object):
                         die("Illegal geometry format: " + geometry)
                     pass
             else:
-                argopt.append(sys.argv.pop(0))
-                if argopt[-1] == '--':
+                optkey = sys.argv.pop(0)
+                argopt.append(optkey)
+                self._options[optkey] = [ ]
+                if optkey == '--':
                     break
-                elif argopt[-1] in argset:
+                elif optkey in argset:
                     if len(sys.argv) != 0:
-                        argopt.append(sys.argv.pop(0))
+                        optval = sys.argv.pop(0)
+                        argopt.append(optval)
+                        self._options[optkey] = [ optval ]
             pass
 
         return argopt
@@ -646,11 +659,19 @@ class SshApplication(Application):
         return set( [ '-b', '-c', '-D', '-e', '-F', '-I', '-i', '-L',
                       '-l', '-m', '-O', '-o', '-p', '-R', '-S', '-W', '-w' ] )
 
+    @property
+    def _isInteractive(self):
+        return self.option('-t') is not None
+
 ###############################################################################
 class MoshApplication(Application):
 
     def __init__(self):
         super(MoshApplication, self).__init__()
+
+    @property
+    def _isInteractive(self):
+        return True
 
     def _argOptions(self):
         return set( [ '-p' ] )
@@ -718,7 +739,7 @@ else:
     if hostNamePos > 0:
         hostName = hostName[hostNamePos:]
 
-if len(sys.argv) != 1:
+if len(sys.argv) != 1 and not application.interactive:
     terminal = PlainTerminal(sshConfig, hostName)
     sys.argv = [ binexe ] + argopt + sys.argv
 else:
