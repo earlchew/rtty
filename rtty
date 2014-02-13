@@ -23,11 +23,11 @@ import re
 from fnmatch import fnmatch
 
 ARG0        = sys.argv.pop(0)
-RSSHTDEBUG  = os.getenv("RSSHTDEBUG") != None
-RSSHTPREFIX = '#@-rssht-'
+RTTYDEBUG  = os.getenv("RTTYDEBUG") != None
+RTTYPREFIX = '#@-rtty-'
 
 def debug(msg):
-    if RSSHTDEBUG:
+    if RTTYDEBUG:
         sys.stderr.write("+ %s\n" % (msg))
 
 def die(msg):
@@ -93,16 +93,16 @@ class Geometry:
         return self._geometry
 
 ###############################################################################
-class RsshtKey:
+class SshKey:
 
-    # This class models a key that can be used to look up an rssht entry
+    # This class models a key that can be used to look up an entry
     # in an ssh configuration file.
 
     def __init__(self, aName, aPrefix = None):
         if aPrefix is None:
-            aPrefix = RSSHTPREFIX
-        elif ( RSSHTPREFIX != aPrefix or
-               aName[:len(RSSHTPREFIX)] != RSSHTPREFIX ):
+            aPrefix = RTTYPREFIX
+        elif ( RTTYPREFIX != aPrefix or
+               aName[:len(RTTYPREFIX)] != RTTYPREFIX ):
             raise KeyError
         else:
             aPrefix = ''
@@ -245,7 +245,7 @@ class SshConfig:
                 if len(key) == 1:
                     continue
                 try:
-                    key = RsshtKey(key, RSSHTPREFIX)
+                    key = SshKey(key, RTTYPREFIX)
                 except KeyError:
                     continue
 
@@ -306,7 +306,7 @@ class Terminal(object):
             config = aSshConfig[aHostName]
 
             colourKeys  = [
-                RsshtKey(terminalName + '-' + colour) for colour in
+                SshKey(terminalName + '-' + colour) for colour in
                 [ 'ColourScheme', 'ColorScheme' ] ]
             for key in colourKeys:
                 if key in config:
@@ -315,7 +315,7 @@ class Terminal(object):
             debug("COLOUR: %s" % (self.__terminalColour))
 
             if self.__terminalGeometry is None:
-                geometryKey = RsshtKey(terminalName + '-Geometry')
+                geometryKey = SshKey(terminalName + '-Geometry')
                 if geometryKey in config:
                     geometry = config[geometryKey][0][0]
                     try:
