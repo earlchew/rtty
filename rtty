@@ -23,6 +23,7 @@ import re
 from fnmatch import fnmatch
 
 ARG0        = sys.argv.pop(0)
+RTTYNAME    = 'rtty'
 RTTYDEBUG  = os.getenv("RTTYDEBUG") != None
 RTTYPREFIX = '#@-rtty-'
 
@@ -30,28 +31,32 @@ def debug(msg):
     if RTTYDEBUG:
         sys.stderr.write("+ %s\n" % (msg))
 
-def die(msg):
-    sys.stderr.write("%s: %s\n" % ( ARG0, msg ))
+def usage():
+    sys.stderr.write("Usage: %s [app] [opts] [user@]host\n" % ( ARG0 ))
+    exit(1)
+
+def die(aMsg):
+    sys.stderr.write("%s: %s\n" % ( ARG0, aMsg ))
     exit(1)
 
 def program():
     return ( os.path.dirname(os.path.abspath(__file__)),
              os.path.basename(os.path.abspath(__file__)) )
 
-def which(name):
-    bindir, binfile = program()
-
-    if name is not None:
-        binfile = name
+def which(aName):
+    bindir, _ = program()
+    binfile   = aName
 
     binpath = os.pathsep.join([
         dir
         for dir in os.environ["PATH"].split(os.pathsep)
         if dir != bindir ])
 
-    binexe = [ os.path.join(path, binfile)
+    binalt = [ os.path.join(path, binfile)
                for path in binpath.split(os.pathsep)
-               if os.path.isfile(os.path.join(path, binfile)) ].pop()
+               if os.path.isfile(os.path.join(path, binfile)) ]
+
+    binexe = binalt.pop() if len(binalt) != 0 else None
 
     return ( binexe, binpath )
 
@@ -742,12 +747,23 @@ class ApplicationFactory:
 
 ###############################################################################
 bindir, binfile = program()
-binexe, binpath = which(None)
+
+if binfile != RTTYNAME:
+    appname = binfile
+
+else:
+
+    if len(sys.argv) == 0:
+        usage()
+
+    appname = sys.argv.pop(0)
+
+binexe, binpath = which(appname)
 
 if not binexe:
-    die("%s not found in %s" % (binfile, binpath))
+    die("%s not found in %s" % (appname, binpath))
 
-application = ApplicationFactory.createApplication(binfile)
+application = ApplicationFactory.createApplication(appname)
 config      = application.configuration
 argopt      = application.stripOptions(sys.argv)
 
