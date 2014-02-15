@@ -1,0 +1,778 @@
+#!/usr/bin/env python
+
+# Copyright (C) 2013  Earl Chew
+#
+# This program is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the
+# Free Software Foundation; either version 2 of the License, or (at your
+# option) any later version.
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+# or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+# for more details.
+#
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+import sys
+import os
+import errno
+import re
+from fnmatch import fnmatch
+
+ARG0        = sys.argv.pop(0)
+RTTYDEBUG  = os.getenv("RTTYDEBUG") != None
+RTTYPREFIX = '#@-rtty-'
+
+def debug(msg):
+    if RTTYDEBUG:
+        sys.stderr.write("+ %s\n" % (msg))
+
+def die(msg):
+    sys.stderr.write("%s: %s\n" % ( ARG0, msg ))
+    exit(1)
+
+def program():
+    return ( os.path.dirname(os.path.abspath(__file__)),
+             os.path.basename(os.path.abspath(__file__)) )
+
+def which(name):
+    bindir, binfile = program()
+
+    if name is not None:
+        binfile = name
+
+    binpath = os.pathsep.join([
+        dir
+        for dir in os.environ["PATH"].split(os.pathsep)
+        if dir != bindir ])
+
+    binexe = [ os.path.join(path, binfile)
+               for path in binpath.split(os.pathsep)
+               if os.path.isfile(os.path.join(path, binfile)) ].pop()
+
+    return ( binexe, binpath )
+
+###############################################################################
+class Geometry:
+
+    # This class models an X11 geometry setting for terminals.
+
+    def __init__(self, aGeometry):
+        match = re.match(
+            r'(\d+)x(\d+)(([+-]\d+)([+-]\d+))?$|([+-]\d+)([+-]\d+)$', aGeometry)
+
+        if match is None:
+            raise ValueError
+
+        self.__geometry = aGeometry
+        self.__width    = match.group(1)
+        self.__height   = match.group(2)
+        self.__xoff     = match.group(4) or match.group(6)
+        self.__yoff     = match.group(5) or match.group(7)
+
+    @property
+    def width(self):
+        return self.__width
+
+    @property
+    def height(self):
+        return self.__height
+
+    @property
+    def xoff(self):
+        return self.__xoff
+
+    @property
+    def yoff(self):
+        return self.__yoff
+
+    def __str__(self):
+        return self.__geometry
+
+###############################################################################
+class SshKey:
+
+    # This class models a key that can be used to look up an entry
+    # in an ssh configuration file.
+
+    def __init__(self, aName, aPrefix = None):
+        if aPrefix is None:
+            aPrefix = RTTYPREFIX
+        elif ( RTTYPREFIX != aPrefix or
+               aName[:len(RTTYPREFIX)] != RTTYPREFIX ):
+            raise KeyError
+        else:
+            aPrefix = ''
+
+        self.__name = aPrefix + aName
+
+    def __str__(self):
+        return self.__name
+
+    def __eq__(self, other):
+        return self.__name == other.__name
+
+    def __hash__(self):
+        return hash(self.__name)
+
+###############################################################################
+class Config(object):
+
+    def __init__(self):
+        pass
+
+###############################################################################
+class SshConfig(Config):
+
+    # This list of valid whitespace characters is extracted from
+    # the ssh source code and is used to ensure that the interpretation
+    # of whitespace matches the ssh implementation.
+
+    __WHITESPACE        = " \t\r\n"
+    __WHITESPACE_EQUALS = __WHITESPACE + '='
+
+    __WHITESPACE_RE        = '[' + __WHITESPACE        + ']'
+    __WHITESPACE_EQUALS_RE = '[' + __WHITESPACE_EQUALS + ']'
+
+    @staticmethod
+    def __splitLine(aLine):
+
+        words = [ ]
+
+        # Split a line into words according to the algorithm implemented
+        # in www.openssh.org strdelim() in misc.c. The manual page is
+        # a little vague on the subject of using an = as a separator speaking
+        # first about keywords and arguments, then describing configuration
+        # options which are not clearly either keywords or arguments:
+        #
+        #   Empty lines and lines starting with '#' are comments.  Otherwise a
+        #   line is of the format "keyword arguments".  Configuration options
+        #   may be separated by whitespace or optional whitespace and exactly
+        #   one '='; the latter format is useful to avoid the need to quote
+        #   whitespace when specifying configuration options using the
+        #   ssh, scp, and sftp -o option.  Arguments may optionally be
+        #   enclosed in double quotes (") in order to represent arguments
+        #   containing spaces.
+        #
+        # The implementation uses strdelim() to repeated chomp off the
+        # next word in a string. The word is terminated before the
+        # next occuring whitespace or equals sign. If the word starts with a
+        # double quote, the end of the word is located at the occurrence
+        # of the next matching quote. Once the word is identified, the function
+        # skips the trailing whitespace, including the first equals sign that
+        # it encounters.
+        #
+        # This means that the only way to embed whitespace or an equals sign
+        # in a word is to use double quotes, but there is no way to pass
+        # an argument that starts with a double quote.
+
+        line = aLine
+        ws   = SshConfig.__WHITESPACE_RE
+
+        while len(line) != 0:
+
+            if line[0] != '"':
+
+                match = re.search((ws + '+') + "=?" + (ws + '*'), line)
+
+                if match is None:
+                    words.append(line)
+                    break
+                words.append(line[:match.start()])
+                line = line[match.end():]
+
+            else:
+
+                line = line[1:]
+                match = line.find('"')
+
+                if match < 0:
+                    # words.append(line)
+                    # The strdelim() implementation discards the fragment
+                    # if there is no matching closing double quote.
+                    break
+                words.append(line[:match])
+                line = line[match+1:]
+
+                match = re.search(('^' + ws + '+'), line)
+
+                if match is not None:
+                    line = line[match.end():]
+
+            pass
+
+        if len(words) > 0 and len(words[0]) == 0:
+            words.pop(0)
+
+        return words
+
+    def __init__(self):
+        super(SshConfig, self).__init__()
+
+        hostName = ''
+        hostIndex = 0
+        lineNum = 0
+
+        self.__hostName              = [ ]
+        self.__hostConfig            = dict()
+        self.__hostConfig[hostIndex] = dict()
+
+        homeDirectory = os.getenv("HOME")
+
+        if homeDirectory == None:
+            return
+
+        try:
+            cfgFile = open(os.sep.join(
+                [ homeDirectory, ".ssh", "config"]))
+        except IOError as err:
+            if err.errno == errno.ENOENT:
+                return
+            raise
+
+        while True:
+            line = cfgFile.readline()
+            lineNum = lineNum + 1
+            if len(line) == 0:
+                break
+            if line[-1] == '\n':
+                line = line[:-1]
+
+            words = SshConfig.__splitLine(line)
+            if len(words) == 0:
+                continue
+
+            key = words[0]
+            val = words[1:]
+
+            if key[0] == '#':
+                if len(key) == 1:
+                    continue
+                try:
+                    key = SshKey(key, RTTYPREFIX)
+                except KeyError:
+                    continue
+
+            if len(words) < 2:
+                die("Malformed configuration at line %d: '%s'" %
+                    (lineNum, line))
+
+            debug("CONFIG: %s %s" % (key, val))
+
+            if key != 'Host':
+                if key not in self.__hostConfig[hostIndex]:
+                    self.__hostConfig[hostIndex][key] = [ ]
+                self.__hostConfig[hostIndex][key].append(val)
+            else:
+                hostIndex = hostIndex + 1
+                self.__hostName.append( (hostIndex, val) )
+                self.__hostConfig[hostIndex] = dict()
+            pass
+
+        cfgFile.close()
+
+    def createKey(self, aName):
+        return SshKey(aName)
+
+    def __getitem__(self, aHost):
+
+        # Construct a list of configuration entries to be applied to this
+        # host. The list is constructed in reverse order so that the later
+        # entries will override the earlier ones.
+
+        hostList = [ 0 ]
+        if aHost is not None:
+            for hostIndex, hostPatterns in self.__hostName:
+                for hostPattern in hostPatterns:
+                    if fnmatch(aHost, hostPattern):
+                        hostList.append(hostIndex)
+                        break
+                    pass
+                pass
+
+        hostConfig = dict()
+
+        for hostIndex in hostList:
+            hostConfig = dict(
+                self.__hostConfig[hostIndex].items() + hostConfig.items())
+
+        debug("HOST: %s" % (hostConfig))
+        return hostConfig
+
+###############################################################################
+class Terminal(object):
+
+    def __init__(self, aGeometry, aConfig, aHostName):
+        if aHostName is not None:
+
+            self.__colour   = None
+            self.__geometry = aGeometry
+
+            terminalName = self.name[0].upper() + self.name[1:]
+
+            config = aConfig[aHostName]
+
+            colourKeys  = [
+                aConfig.createKey(terminalName + '-' + colour) for colour in
+                [ 'ColourScheme', 'ColorScheme' ] ]
+            for key in colourKeys:
+                if key in config:
+                    self.__colour = config[key][0]
+
+            debug("COLOUR: %s" % (self.__colour))
+
+            if self.__geometry is None:
+                geometryKey = aConfig.createKey(terminalName + '-Geometry')
+                if geometryKey in config:
+                    geometry = config[geometryKey][0][0]
+                    try:
+                        self.__geometry = Geometry(geometry)
+                    except:
+                        die("Badly formatted geometry in %s: '%s'" %
+                            (geometryKey, geometry))
+                pass
+
+            if self.__geometry is not None:
+                debug("GEOMETRY: %s" % (self.__geometry))
+
+    @property
+    def _colour(self):
+        return ' '.join(self.__colour) if self.__colour else ''
+
+    @property
+    def _geometry(self):
+        return self.__geometry
+
+    @property
+    def _width(self):
+        return self.__geometry.width if self.__geometry else None
+
+    @property
+    def _height(self):
+        return self.__geometry.height if self.__geometry else None
+
+    @property
+    def env(self):
+        return [ ]
+
+    def spawn(self, aArgs):
+        return os.spawnvp(os.P_NOWAIT, aArgs[0], aArgs)
+
+###############################################################################
+class GnomeTerminal(Terminal):
+
+    # Setting Gnome terminal colours via .Xdefaults
+    # http://curtisfree.com/blog/2012/03/24/convert_gnome_terminal_colors_x_resources
+    def __init__(self, aGeometry, aConfig, aHostName):
+        super(GnomeTerminal, self).__init__(aGeometry, aConfig, aHostName)
+
+    @property
+    def name(self):
+        return "gnome"
+
+    def args(self, aProgram, aTitle, aArgs):
+
+        terminalColour = self._colour
+
+        geometry = self._geometry
+        geometryOpt = [ "--geometry %s" % (geometry) ] if geometry else [ ]
+
+        return (
+            [ "gnome-terminal" ] +
+            geometryOpt +
+            ( [ "--profile=" + terminalColour ] if terminalColour else [ ] ) +
+            [ "--title=" + aTitle, "-x", aProgram ] + aArgs )
+
+###############################################################################
+class Xfce4Terminal(Terminal):
+
+    def __init__(self, aGeometry, aConfig, aHostName):
+        super(Xfce4Terminal, self).__init__(aGeometry, aConfig, aHostName)
+
+    @property
+    def name(self):
+        return "xfce4"
+
+    @property
+    def env(self):
+
+        terminalColour = self._colour
+
+        if len(terminalColour) >= 2 and terminalColour[0:2] == "~" + os.sep:
+            terminalColour = os.environ["HOME"] + os.sep + terminalColour[2:]
+
+        return [ ( "XDG_CONFIG_HOME", terminalColour ) ]
+
+    def args(self, aProgram, aTitle, aArgs):
+
+        geometry = self._geometry
+        geometryOpt = [ "--geometry %s" % (geometry) ] if geometry else [ ]
+
+        return (
+            [ "xfce4-terminal" ] +
+            geometryOpt +
+            ( [ "--disable-server" ] if self._colour else [ ] ) +
+            [ "--title=" + aTitle, "-x", aProgram ] + aArgs )
+
+###############################################################################
+class OsxTerminal(Terminal):
+
+    def __init__(self, aGeometry, aConfig, aHostName):
+        super(OsxTerminal, self).__init__(aGeometry, aConfig, aHostName)
+
+    @property
+    def name(self):
+        return "osx"
+
+    @staticmethod
+    def _quote(text):
+        return text.replace('\\', r'\\').replace(r'"', r'\"')
+
+    def args(self, aProgram, aTitle, aArgs):
+
+        terminalColour = self._colour
+
+        if not terminalColour:
+            colourCmd = ''
+
+        else:
+            textColour = ( 'osascript -e "' +
+                'tell application \\\"Terminal\\\" to ' +
+                'set normal text color of window 1 to ' + terminalColour + '"' )
+
+            colourCmd = (
+                '"' + OsxTerminal._quote(textColour) + '"' + ' & " ; " & ')
+
+        terminalWidth = self._width
+
+        if not terminalWidth:
+            widthCmd = ''
+
+        else:
+            windowWidth = ( 'osascript -e "' +
+                'tell application \\\"Terminal\\\" to ' +
+                'set number of columns of window 1 to ' + terminalWidth + '"' )
+
+            widthCmd = (
+                '"' + OsxTerminal._quote(windowWidth) + '"' + ' & " ; " & ')
+
+        terminalHeight = self._height
+
+        if not terminalHeight:
+            heightCmd = ''
+
+        else:
+            windowHeight = ( 'osascript -e "' +
+                'tell application \\\"Terminal\\\" to ' +
+                'set number of rows of window 1 to ' + terminalHeight + '"' )
+
+            heightCmd = (
+                '"' + OsxTerminal._quote(windowHeight) + '"' + ' & " ; " & ')
+
+        titleText = OsxTerminal._quote(aTitle)
+
+        terminalTitle = ( 'osascript -e "' +
+                'tell application \\\"Terminal\\\" to ' +
+                'set custom title of window 1 to \\\"' + titleText + '\\\""' )
+
+        titleCmd = (
+                '"' + OsxTerminal._quote(terminalTitle) + '"' + ' & " ; " & ')
+
+        return [ "osascript",
+                 "-e",
+                 'tell application "Terminal" to do script ' +
+                 widthCmd +
+                 heightCmd +
+                 colourCmd +
+                 titleCmd +
+                 '"exec' +
+                 ''.join([ ('" & " " & quoted form of "' +
+                                OsxTerminal._quote(arg))
+                          for arg in [ aProgram ] + aArgs ]) + '"',
+                 "-e",
+                 'return' ]
+
+###############################################################################
+class OsxITerm(OsxTerminal):
+
+    def __init__(self, aGeometry, aConfig, aHostName):
+        super(OsxTerminal, self).__init__(aGeometry, aConfig, aHostName)
+
+    def args(self, aProgram, aTitle, aArgs):
+
+        terminalColour = self._colour
+
+        if not terminalColour:
+            colourCmd = [ ]
+
+        else:
+            colourCmd = [
+                '-e', 'set foreground color to ' + terminalColour ]
+
+        terminalWidth = self._width
+
+        if not terminalWidth:
+            widthCmd = [ ]
+        else:
+            widthCmd = [
+                '-e' 'set number of columns to ' + terminalWidth ]
+
+        terminalHeight = self._height
+
+        if not terminalHeight:
+            heightCmd = [ ]
+        else:
+            heightCmd = [
+                '-e' 'set number of rows to ' + terminalHeight ]
+
+        titleCmd = [
+                '-e', 'set name to "' + OsxTerminal._quote(aTitle) + '"']
+
+        return ( [ "osascript",
+                   "-e",
+                   'tell application "iTerm" to ' +
+                   'tell ( make new terminal )' ] +
+                 widthCmd +
+                 heightCmd +
+                 [ "-e",
+                   'tell ( make new session )' ] +
+                 colourCmd +
+                 titleCmd +
+                 [ "-e",
+                   'exec command ' +
+                   ' & " " & '.join([ '"' + OsxTerminal._quote(arg) + '"'
+                                      for arg in [ aProgram ] + aArgs ]),
+                   "-e",
+                   'end tell',
+                   "-e",
+                   'end tell',
+                   "-e",
+                   'return' ] )
+
+###############################################################################
+class PlainTerminal(Terminal):
+
+    def __init__(self, aConfig, aHostName):
+        super(PlainTerminal, self).__init__(None, aConfig, aHostName)
+
+    @property
+    def name(self):
+        return "plain"
+
+    def args(self, aProgram, aTitle, aArgs):
+        return [ aProgram ] + aArgs
+
+    def spawn(self, aArgs):
+        os.execvp(aArgs[0], aArgs)
+        return None
+
+###############################################################################
+# Terminal factory function
+#
+# This is the factory function that inspects the runtime environment
+# and returns the matching kind of terminal.
+
+class TerminalFactory:
+
+    @staticmethod
+    def createTerminal(aGeometry, aConfig, aHostName):
+        if sys.platform == 'darwin':
+
+            termprogram = os.getenv("TERM_PROGRAM")
+
+            if termprogram == "Apple_Terminal":
+                return OsxTerminal(aGeometry, aConfig, aHostName)
+
+            if termprogram == "iTerm.app":
+                return OsxITerm(aGeometry, aConfig, aHostName)
+
+        else:
+            colorterm = os.getenv("COLORTERM")
+
+            if colorterm == "xfce4-terminal":
+                return Xfce4Terminal(aGeometry, aConfig, aHostName)
+
+            if colorterm == "gnome-terminal":
+                return GnomeTerminal(aGeometry, aConfig, aHostName)
+
+        return PlainTerminal(aConfig, aHostName)
+
+###############################################################################
+class Application(object):
+
+    def __init__(self):
+        self.__geometry = None
+        self.__options  = dict()
+
+    def _argOptions(self):
+        return set()
+
+    @property
+    def geometry(self):
+        return self.__geometry
+
+    @property
+    def interactive(self):
+        return self._isInteractive
+
+    def option(self, key):
+        return self.__options[key] if key in self.__options else None
+
+    def stripOptions(self, aArgv):
+
+        # Strip and return the options from argument list leaving only
+        # the arguments that do not represent options. Return the stripped
+        # options.
+
+        argopt = [ ]
+        argset = self._argOptions()
+
+        while len(aArgv) != 0 and aArgv[0][:1] == '-':
+            if aArgv[0] == '-geometry':
+                aArgv.pop(0)
+                if len(aArgv) == 0:
+                    die("Missing geometry")
+                else:
+                    geometry = aArgv.pop(0)
+                    try:
+                        self.__geometry = Geometry(geometry)
+                    except ValueError:
+                        die("Illegal geometry format: " + geometry)
+                    pass
+            else:
+                optkey = aArgv.pop(0)
+                argopt.append(optkey)
+                self.__options[optkey] = [ ]
+                if optkey == '--':
+                    break
+                elif optkey in argset:
+                    if len(aArgv) != 0:
+                        optval = aArgv.pop(0)
+                        argopt.append(optval)
+                        self.__options[optkey] = [ optval ]
+            pass
+
+        return argopt
+
+###############################################################################
+class SshApplication(Application):
+
+    def __init__(self):
+        super(SshApplication, self).__init__()
+
+        self.__config = SshConfig()
+
+    def _argOptions(self):
+        return set( [ '-b', '-c', '-D', '-e', '-F', '-I', '-i', '-L',
+                      '-l', '-m', '-O', '-o', '-p', '-R', '-S', '-W', '-w' ] )
+
+    @property
+    def _isInteractive(self):
+        return self.option('-t') is not None
+
+    @property
+    def configuration(self):
+        return self.__config
+
+###############################################################################
+class MoshApplication(Application):
+
+    def __init__(self):
+        super(MoshApplication, self).__init__()
+
+        self.__config = SshConfig()
+
+    @property
+    def configuration(self):
+        return self.__config
+
+    @property
+    def _isInteractive(self):
+        return True
+
+    def _argOptions(self):
+        return set( [ '-p' ] )
+
+    def stripOptions(self, aArgv):
+
+        argopt = super(MoshApplication, self).stripOptions(aArgv)
+
+        appopt = [ ]
+        for filename, fileopt in [ ( "ssh",         "--ssh=" ),
+                                   ( "mosh-client", "--client=" ) ]:
+
+            fileexe, filepath = which(filename)
+
+            if not fileexe:
+                die("%s not found in %s" % (filename, filepath))
+
+            filearg = [ fileopt + fileexe ]
+
+            for arg in argopt:
+                if len(fileopt) <= len(arg):
+                    if arg[:len(fileopt)] == fileopt:
+                        filearg = [ ]
+                        break
+
+            appopt += filearg
+
+        return argopt + appopt
+
+###############################################################################
+# Application Factory
+#
+# This is the factory function that inspects the name of the program
+# and returns the matching kind of application.
+
+class ApplicationFactory:
+
+    @staticmethod
+    def createApplication(aAppName):
+
+        if aAppName == "ssh":
+            return SshApplication()
+
+        if aAppName == "mosh":
+            return MoshApplication()
+
+        return None
+
+###############################################################################
+bindir, binfile = program()
+binexe, binpath = which(None)
+
+if not binexe:
+    die("%s not found in %s" % (binfile, binpath))
+
+application = ApplicationFactory.createApplication(binfile)
+config      = application.configuration
+argopt      = application.stripOptions(sys.argv)
+
+if len(sys.argv) == 0:
+    hostName = None
+else:
+    hostName    = sys.argv[0]
+    hostNamePos = 1 + hostName.find('@')
+    if hostNamePos > 0:
+        hostName = hostName[hostNamePos:]
+
+if len(sys.argv) != 1 and not application.interactive:
+    terminal = PlainTerminal(config, hostName)
+    sys.argv = [ binexe ] + argopt + sys.argv
+else:
+    geometry = application.geometry
+    terminal = TerminalFactory.createTerminal(geometry, config, hostName)
+    for name,value in terminal.env:
+        os.environ[name] = value
+        debug("EXPORT %s=%s" % (name, value))
+    sys.argv = terminal.args(binexe,
+                             ' '.join(str(arg) for arg in sys.argv),
+                             argopt + sys.argv)
+
+debug("EXEC: %s" % (' '.join("'%s'" % (arg) for arg in sys.argv)))
+
+if terminal.spawn(sys.argv) is None:
+    die("Unable to exec %s" % (sys.argv[0]))
