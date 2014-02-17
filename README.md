@@ -15,6 +15,8 @@ from local consoles
 `rtty` is a wrapper that creates a new terminal window, customises the scheme,
 and launches a remote terminal session within that new window.
 
+![](https://raw2.github.com/earlchew/rtty/master/example.png)
+
 #### Requirements
 
 * Python 2.6, 2.7
