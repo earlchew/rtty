@@ -533,8 +533,7 @@ class OsxITerm(OsxTerminal):
             heightCmd = [
                 '-e' 'set number of rows to ' + terminalHeight ]
 
-        titleCmd = [
-                '-e', 'set name to "' + OsxTerminal._quote(aTitle) + '"']
+        titleCmd = [ '-e', 'set name to "' + OsxTerminal._quote(aTitle) + '"' ]
 
         return ( [ "osascript",
                    "-e",
@@ -611,6 +610,7 @@ class Application(object):
     def __init__(self):
         self.__geometry = None
         self.__options  = dict()
+        self.__title    = None
 
     def _argOptions(self):
         return set()
@@ -622,6 +622,10 @@ class Application(object):
     @property
     def interactive(self):
         return self._isInteractive
+
+    @property
+    def title(self):
+        return self.__title
 
     def option(self, key):
         return self.__options[key] if key in self.__options else None
@@ -647,13 +651,19 @@ class Application(object):
                     except ValueError:
                         die("Illegal geometry format: " + geometry)
                     pass
+            elif aArgv[0] == '-title':
+                aArgv.pop(0)
+                if len(aArgv) == 0:
+                    die("Missing title")
+                else:
+                    self.__title = aArgv.pop(0)
             else:
                 optkey = aArgv.pop(0)
-                argopt.append(optkey)
-                self.__options[optkey] = [ ]
                 if optkey == '--':
                     break
-                elif optkey in argset:
+                argopt.append(optkey)
+                self.__options[optkey] = [ ]
+                if optkey in argset:
                     if len(aArgv) != 0:
                         optval = aArgv.pop(0)
                         argopt.append(optval)
@@ -784,9 +794,11 @@ else:
     for name,value in terminal.env:
         os.environ[name] = value
         debug("EXPORT %s=%s" % (name, value))
-    sys.argv = terminal.args(binexe,
-                             ' '.join(str(arg) for arg in sys.argv),
-                             argopt + sys.argv)
+    sys.argv = terminal.args(
+        binexe,
+        (application.title if application.title
+                           else ' '.join(str(arg) for arg in sys.argv)),
+         argopt + [ '--' ] + sys.argv)
 
 debug("EXEC: %s" % (' '.join("'%s'" % (arg) for arg in sys.argv)))
 
