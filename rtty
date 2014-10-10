@@ -686,7 +686,7 @@ class SshApplication(Application):
 
     @property
     def _isInteractive(self):
-        return self.option('-t') is not None
+        return self.option('-t') is not None and self.option('-N') is not None
 
     @property
     def configuration(self):
@@ -785,7 +785,7 @@ else:
     if hostNamePos > 0:
         hostName = hostName[hostNamePos:]
 
-if len(sys.argv) != 1 and not application.interactive:
+if len(sys.argv) != 1 or not application.interactive:
     terminal = PlainTerminal(config, hostName)
     sys.argv = [ binexe ] + argopt + sys.argv
 else:
