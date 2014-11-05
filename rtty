@@ -620,6 +620,10 @@ class Application(object):
         return self.__geometry
 
     @property
+    def forwardingOnly(self):
+        return self._isForwardingOnly
+
+    @property
     def interactive(self):
         return self._isInteractive
 
@@ -685,8 +689,12 @@ class SshApplication(Application):
                       '-l', '-m', '-O', '-o', '-p', '-R', '-S', '-W', '-w' ] )
 
     @property
+    def _isForwardingOnly(self):
+        return self.option('-N') is not None
+
+    @property
     def _isInteractive(self):
-        return self.option('-t') is not None and self.option('-N') is not None
+        return self.option('-t') is not None
 
     @property
     def configuration(self):
@@ -707,6 +715,10 @@ class MoshApplication(Application):
     @property
     def _isInteractive(self):
         return True
+
+    @property
+    def _isForwardingOnly(self):
+        return False
 
     def _argOptions(self):
         return set( [ '-p' ] )
@@ -785,9 +797,12 @@ else:
     if hostNamePos > 0:
         hostName = hostName[hostNamePos:]
 
-if len(sys.argv) != 1 or not application.interactive:
+if ( len(sys.argv) != 1 and not application.interactive or
+     application.forwardingOnly ):
+
     terminal = PlainTerminal(config, hostName)
     sys.argv = [ binexe ] + argopt + sys.argv
+
 else:
     geometry = application.geometry
     terminal = TerminalFactory.createTerminal(geometry, config, hostName)
