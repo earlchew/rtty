@@ -697,8 +697,15 @@ class SshApplication(Application):
         return self.option('-t') is not None
 
     @property
+    def forceInteractiveOpt(self):
+        return [ '-t' ]
+
+    @property
     def configuration(self):
         return self.__config
+
+    def quoteShellCommand(self, cmd):
+        return cmd
 
 ###############################################################################
 class MoshApplication(Application):
@@ -719,6 +726,13 @@ class MoshApplication(Application):
     @property
     def _isForwardingOnly(self):
         return False
+
+    @property
+    def forceInteractiveOpt(self):
+        return [ ]
+
+    def quoteShellCommand(self, cmd):
+        return cmd.replace('"', '\\"').replace("'", '"')
 
     def _argOptions(self):
         return set( [ '-p' ] )
@@ -809,11 +823,19 @@ else:
     for name,value in terminal.env:
         os.environ[name] = value
         debug("EXPORT %s=%s" % (name, value))
+
+    argv = list(sys.argv)
+    if len(argv) == 1:
+        argopt.extend( application.forceInteractiveOpt )
+        argv.extend( [
+            application.quoteShellCommand(
+                'ssh-agent sh -c \'exec "$SHELL" -l\'') ] )
+
     sys.argv = terminal.args(
         binexe,
         (application.title if application.title
                            else ' '.join(str(arg) for arg in sys.argv)),
-         argopt + [ '--' ] + sys.argv)
+         argopt + [ '--' ] + argv)
 
 debug("EXEC: %s" % (' '.join("'%s'" % (arg) for arg in sys.argv)))
 
