@@ -732,7 +732,16 @@ class MoshApplication(Application):
         return [ ]
 
     def quoteShellCommand(self, cmd):
-        return cmd.replace('"', '\\"').replace("'", '"')
+        quotedcmd = ''
+        for ch in cmd:
+            if ch == '\\':
+                quotedcmd += '\'\\\''
+            elif ch == '\'':
+                quotedcmd += '\'\'\''
+            else:
+                quotedcmd += ch
+        shellcmd = 'sh -c \'%s\'' % (quotedcmd)
+        return shellcmd.replace('"', '\\"').replace("'", '"')
 
     def _argOptions(self):
         return set( [ '-p' ] )
@@ -829,7 +838,7 @@ else:
         argopt.extend( application.forceInteractiveOpt )
         argv.extend( [
             application.quoteShellCommand(
-                'ssh-agent sh -c \'exec "$SHELL" -l\'') ] )
+                'which ssh-agent >/dev/null ; false || { exec "$SHELL" -l ; exit 1 ; } ; exec ssh-agent sh -c \'ssh-add ; exec "$SHELL" -l\'') ] )
 
     sys.argv = terminal.args(
         binexe,
