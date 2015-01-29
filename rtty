@@ -434,7 +434,7 @@ class OsxTerminal(Terminal):
 
     @staticmethod
     def _quote(text):
-        return text.replace('\\', r'\\').replace(r'"', r'\"')
+        return text.replace('\\', r'\\\\').replace(r'"', r'\"')
 
     def args(self, aProgram, aTitle, aArgs):
 
@@ -732,16 +732,7 @@ class MoshApplication(Application):
         return [ ]
 
     def quoteShellCommand(self, cmd):
-        quotedcmd = ''
-        for ch in cmd:
-            if ch == '\\':
-                quotedcmd += '\'\\\''
-            elif ch == '\'':
-                quotedcmd += '\'\'\''
-            else:
-                quotedcmd += ch
-        shellcmd = 'sh -c \'%s\'' % (quotedcmd)
-        return shellcmd.replace('"', '\\"').replace("'", '"')
+        return 'sh -c "%s"' % (cmd)
 
     def _argOptions(self):
         return set( [ '-p' ] )
@@ -838,7 +829,10 @@ else:
         argopt.extend( application.forceInteractiveOpt )
         argv.extend( [
             application.quoteShellCommand(
-                'which ssh-agent >/dev/null ; false || { exec "$SHELL" -l ; exit 1 ; } ; exec ssh-agent sh -c \'ssh-add ; exec "$SHELL" -l\'') ] )
+                'which ssh-agent >/dev/null || '
+                  '{ exec "$SHELL" -l ; exit 1 ; } ; '
+                'exec ssh-agent sh -c \'ssh-add ; exec "$SHELL" -l\'') ] )
+        debug("ARGV: %s" % (' '.join("<%s>" % (arg) for arg in argv)))
 
     sys.argv = terminal.args(
         binexe,
