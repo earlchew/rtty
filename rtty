@@ -744,10 +744,8 @@ class MoshApplication(Application):
     def quoteShellCommand(self, cmd):
 
         # Unlike ssh, mosh interprets the first word as the name of the
-        # command, and subsequent words as arguments. Be aware that
-        # mosh will itself quote each word, as required, to protect
-        # it from shell expansion, and then pass it on to ssh as it
-        # establishes the connection.
+        # command, and subsequent words as arguments. Explicitly call
+        # the shell to process the script.
 
         return [ 'sh', '-c', cmd ]
 
