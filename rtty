@@ -434,7 +434,7 @@ class OsxTerminal(Terminal):
 
     @staticmethod
     def _quote(text):
-        return text.replace('\\', r'\\\\').replace(r'"', r'\"')
+        return text.replace('\\', r'\\').replace(r'"', r'\"')
 
     def args(self, aProgram, aTitle, aArgs):
 
@@ -506,6 +506,15 @@ class OsxITerm(OsxTerminal):
     def __init__(self, aGeometry, aConfig, aHostName):
         super(OsxTerminal, self).__init__(aGeometry, aConfig, aHostName)
 
+    @staticmethod
+    def _quoteCmd(text):
+
+        # Rather strangely, ITerm requires double quoting of the
+        # argument in order to pass it through to the underlying
+        # application intact.
+
+        return OsxTerminal._quote('"' + OsxTerminal._quote(text) + '"')
+
     def args(self, aProgram, aTitle, aArgs):
 
         terminalColour = self._colour
@@ -546,9 +555,10 @@ class OsxITerm(OsxTerminal):
                  colourCmd +
                  titleCmd +
                  [ "-e",
-                   'exec command ' +
-                   ' & " " & '.join([ '"' + OsxTerminal._quote(arg) + '"'
-                                      for arg in [ aProgram ] + aArgs ]),
+                   'exec command' +
+                   ' & " " & '.join([
+                       '"' + OsxITerm._quoteCmd(arg) + '"'
+                       for arg in [ aProgram ] + aArgs ]),
                    "-e",
                    'end tell',
                    "-e",
@@ -705,7 +715,7 @@ class SshApplication(Application):
         return self.__config
 
     def quoteShellCommand(self, cmd):
-        return cmd
+        return [ cmd ]
 
 ###############################################################################
 class MoshApplication(Application):
@@ -732,7 +742,14 @@ class MoshApplication(Application):
         return [ ]
 
     def quoteShellCommand(self, cmd):
-        return 'sh -c "%s"' % (cmd)
+
+        # Unlike ssh, mosh interprets the first word as the name of the
+        # command, and subsequent words as arguments. Be aware that
+        # mosh will itself quote each word, as required, to protect
+        # it from shell expansion, and then pass it on to ssh as it
+        # establishes the connection.
+
+        return [ 'sh', '-c', cmd ]
 
     def _argOptions(self):
         return set( [ '-p' ] )
@@ -814,6 +831,10 @@ else:
 if ( len(sys.argv) != 1 and not application.interactive or
      application.forwardingOnly ):
 
+    # Do not quote or otherwise interfere with the arguments provided
+    # to the underlying application. Preserve the native behaviour of
+    # the application.
+
     terminal = PlainTerminal(config, hostName)
     sys.argv = [ binexe ] + argopt + sys.argv
 
@@ -826,12 +847,19 @@ else:
 
     argv = list(sys.argv)
     if len(argv) == 1:
+
+        # Write the command assuming that it will be passed to ssh.
+        # Other applications will have to adapt this string to
+        # accommodate their own idiosyncracies. The behaviour
+        # of ssh is to pass this string on to the shell for
+        # interpretation.
+
         argopt.extend( application.forceInteractiveOpt )
-        argv.extend( [
+        argv.extend(
             application.quoteShellCommand(
                 'which ssh-agent >/dev/null || '
                   '{ exec "$SHELL" -l ; exit 1 ; } ; '
-                'exec ssh-agent sh -c \'ssh-add ; exec "$SHELL" -l\'') ] )
+                'exec ssh-agent sh -c \'ssh-add ; exec "$SHELL" -l\''))
         debug("ARGV: %s" % (' '.join("<%s>" % (arg) for arg in argv)))
 
     sys.argv = terminal.args(
