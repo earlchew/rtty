@@ -532,7 +532,7 @@ class OsxITerm(OsxTerminal):
             widthCmd = [ ]
         else:
             widthCmd = [
-                '-e' 'set number of columns to ' + terminalWidth ]
+                '-e', 'set columns to ' + terminalWidth ]
 
         terminalHeight = self._height
 
@@ -540,30 +540,34 @@ class OsxITerm(OsxTerminal):
             heightCmd = [ ]
         else:
             heightCmd = [
-                '-e' 'set number of rows to ' + terminalHeight ]
+                '-e', 'set rows to ' + terminalHeight ]
 
         titleCmd = [ '-e', 'set name to "' + OsxTerminal._quote(aTitle) + '"' ]
 
-        return ( [ "osascript",
-                   "-e",
-                   'tell application "iTerm" to ' +
-                   'tell ( make new terminal )' ] +
+        return ( [ 'osascript',
+                   '-e',
+                   'tell application "iTerm"' ] +
+                 [ '-e',
+                   'tell (' +
+                     ' create window with default profile ' +
+                     ' command' +
+                       ' & " " & '.join([
+                         '"' + OsxITerm._quoteCmd(arg) + '"'
+                         for arg in [ aProgram ] + aArgs ]) +
+                     ')' ] +
+                 [ '-e',
+                   'tell current session' ] +
                  widthCmd +
                  heightCmd +
-                 [ "-e",
-                   'tell ( make new session )' ] +
                  colourCmd +
                  titleCmd +
-                 [ "-e",
-                   'exec command' +
-                   ' & " " & '.join([
-                       '"' + OsxITerm._quoteCmd(arg) + '"'
-                       for arg in [ aProgram ] + aArgs ]),
-                   "-e",
+                 [ '-e',
                    'end tell',
-                   "-e",
+                   '-e',
                    'end tell',
-                   "-e",
+                   '-e',
+                   'end tell',
+                   '-e',
                    'return' ] )
 
 ###############################################################################
