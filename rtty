@@ -861,7 +861,12 @@ else:
             application.quoteShellCommand(
                 'which ssh-agent >/dev/null || '
                   '{ exec "$SHELL" -l ; exit 1 ; } ; '
-                'exec ssh-agent sh -c \'ssh-add ; exec "$SHELL" -l\''))
+                'set -- sh -c \'ssh-add ; exec "$SHELL" -l\' ; '
+                'if [ -n "$XDG_RUNTIME_DIR" ] ; then '
+                  'set -- -a "$XDG_RUNTIME_DIR/ssh-agent-$$" "$@" ; '
+                  'rm -f "$2" ; '
+                'fi ; '
+                'exec ssh-agent "$@"'))
         debug("ARGV: %s" % (' '.join("<%s>" % (arg) for arg in argv)))
 
     sys.argv = terminal.args(
