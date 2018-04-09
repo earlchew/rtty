@@ -760,16 +760,58 @@ class MoshApplication(Application):
 
         argopt = super(MoshApplication, self).stripOptions(aArgv)
 
+        serveropts = [
+            ( "--ssh=",    "ssh" ),
+            ( "--client=", "mosh-client" ),
+        ]
+
+        # Propagate KRB5CCNAME before the bootstrap ssh session closes
+        # and the kerberos certificate is lost.
+        #
+        # Do not use $$ because iTerm2 does not have a way to
+        # quote them:
+        #
+        # https://gitlab.com/gnachman/iterm2/issues/6631
+        #
+        serveropts.append((
+            "--server=", [
+                '{',
+                #'  set -x ;',
+                '  set -- "$KRB5CCNAME" "/tmp/krb5cc_$USER" "$USER" ;',
+                '  if [ -n "$1" -a -n "$3" -a '
+                       'x"${1#FILE:}" != x"$1" -a -d "$2" ] ; then',
+                '    set -- "${1#FILE:}" "$2" "$('
+                '      head -6 /proc/self/status | tail -1 | cut -f 2)" ;',
+                '    if ! cmp -s -- "$1" "$2/tkt" ; then',
+                '      cp -p -- "$1" "$2/tkt.$3" ;',
+                '      mv -- "$2/tkt.$3" "$2/tkt" ;',
+                '    fi ;',
+                '    rm -f -- "$2/tkt.$3" ;',
+                '  fi ;',
+                '  KRB5CCNAME=DIR:$2 ;',
+                '} ' # >/tmp/mosh.log 2>&1
+                ';',
+                'mosh-server'
+            ]
+        ))
+
         appopt = [ ]
-        for filename, fileopt in [ ( "ssh",         "--ssh=" ),
-                                   ( "mosh-client", "--client=" ) ]:
+        for fileopt, filearg in serveropts:
 
-            fileexe, filepath = which(filename)
+            if not isinstance(filearg, basestring):
+                filearg = [ fileopt + ' '.join(filearg) ]
 
-            if not fileexe:
-                die("%s not found in %s" % (filename, filepath))
+            else:
+                filename = filearg
 
-            filearg = [ fileopt + fileexe ]
+                fileexe, filepath = which(filename)
+
+                if not fileexe:
+                    die("%s not found in %s" % (filename, filepath))
+
+                filearg = [ fileopt + fileexe ]
+
+            assert isinstance(filearg, list)
 
             for arg in argopt:
                 if len(fileopt) <= len(arg):
@@ -855,11 +897,17 @@ else:
         # accommodate their own idiosyncracies. The behaviour
         # of ssh is to pass this string on to the shell for
         # interpretation.
+        #
+        # If the remote is started without a forwarded agent connection
+        # and it is possible to create a local agent, then launch the
+        # remote shell with a local agent and add the local credentials
+        # immediately. This starts each remote session with its own per-session
+        # agent.
 
         argopt.extend( application.forceInteractiveOpt )
         argv.extend(
             application.quoteShellCommand(
-                'which ssh-agent >/dev/null || '
+                '{ [ -z "$SSH_AUTH_SOCK" ] && which ssh-agent >/dev/null; } || '
                   '{ exec "$SHELL" -l ; exit 1 ; } ; '
                 'set -- sh -c \'ssh-add ; exec "$SHELL" -l\' ; '
                 'if [ -n "$XDG_RUNTIME_DIR" ] ; then '
