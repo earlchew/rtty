@@ -932,11 +932,17 @@ else:
                 'exec ssh-agent "$@"'))
         debug("ARGV: %s" % (' '.join("<%s>" % (arg) for arg in argv)))
 
+    cleanPath = os.pathsep.join([
+        dir
+        for dir in os.environ["PATH"].split(os.pathsep)
+        if dir != bindir]),
+    debug("PATH: %s" % (cleanPath))
+
     sys.argv = terminal.args(
-        binexe,
+        "/usr/bin/env",
         (application.title if application.title
                            else ' '.join(str(arg) for arg in sys.argv)),
-         argopt + [ '--' ] + argv)
+        [ "PATH={}".format(cleanPath), binexe ] + argopt + [ '--' ] + argv)
 
 debug("EXEC: %s" % (' '.join("'%s'" % (arg) for arg in sys.argv)))
 
