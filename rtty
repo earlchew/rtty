@@ -795,15 +795,16 @@ class MoshApplication(Application):
                 '  if [ -n "$1" -a -n "$3" -a '
                        'x"${1#FILE:}" != x"$1" -a -d "$2" ] ; then',
                 '    set -- "${1#FILE:}" "$2" "$('
-                '      head -6 /proc/self/status | tail -1 | cut -f 2)" ;',
-                '    if ! cmp -s -- "$1" "$2/tkt" ; then',
-                '      cp -p -- "$1" "$2/tkt.$3" ;',
-                '      mv -- "$2/tkt.$3" "$2/tkt" ;',
+                '      exec sed -ne "6{s,^[^0-9]*,,;p}" /proc/self/status)" ;',
+                '    set -- "$@" "$2/$(cat "$2/primary")" ;',
+                '    if ! cmp -s -- "$1" "$4" ; then',
+                '      cp -p -- "$1" "$4.$3" ;',
+                '      mv -- "$4.$3" "$4" ;',
                 '    fi ;',
-                '    rm -f -- "$2/tkt.$3" ;',
+                '    rm -f -- "$4.$3" ;',
                 '  fi ;',
                 '  KRB5CCNAME=DIR:$2 ;',
-                '} ' # >/tmp/mosh.log 2>&1
+                '} ' #'>/tmp/mosh.log 2>&1'
                 ';',
                 'mosh-server'
             ]
