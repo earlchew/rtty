@@ -291,10 +291,24 @@ class SshConfig(Config):
         hostList = [ 0 ]
         if aHost is not None:
             for hostIndex, hostPatterns in self.__hostName:
+
+                # Apply the exclusion patterns first. If there is a single
+                # match, then ignore this host record. Only check for
+                # an inclusion pattern if there are no matching exclusion
+                # patterns.
+
                 for hostPattern in hostPatterns:
-                    if fnmatch(aHost, hostPattern):
-                        hostList.append(hostIndex)
-                        break
+                    if hostPattern.startswith('!'):
+                        if fnmatch(aHost, hostPattern[1:]):
+                            break
+                else:
+                    for hostPattern in hostPatterns:
+                        if not hostPattern.startswith('!'):
+                            if fnmatch(aHost, hostPattern):
+                                hostList.append(hostIndex)
+                                break
+                            pass
+                        pass
                     pass
                 pass
 
