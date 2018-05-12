@@ -787,6 +787,9 @@ class MoshApplication(Application):
         #
         # https://gitlab.com/gnachman/iterm2/issues/6631
         #
+        # Prefer to use FILE: rather than DIR: because older
+        # krb5 libraries only provide support for FILE:
+        #
         serveropts.append((
             "--server=", [
                 '{',
@@ -803,7 +806,7 @@ class MoshApplication(Application):
                 '    fi ;',
                 '    rm -f -- "$4.$3" ;',
                 '  fi ;',
-                '  KRB5CCNAME=DIR:$2 ;',
+                '  KRB5CCNAME=FILE:"$2/$(cat "$2/primary")" ;'
                 '} ' #'>/tmp/mosh.log 2>&1'
                 ';',
                 'mosh-server'
@@ -918,6 +921,9 @@ else:
         # remote shell with a local agent and add the local credentials
         # immediately. This starts each remote session with its own per-session
         # agent.
+        #
+        # Prefer to use FILE: rather than DIR: because older
+        # krb5 libraries only provide support for FILE:
 
         argopt.extend( application.forceInteractiveOpt )
         argv.extend(
@@ -936,7 +942,7 @@ else:
                 '    fi ;'
                 '    rm -f -- "$4.$3" ;'
                 '  fi ;'
-                '  KRB5CCNAME=DIR:$2 ;'
+                '  KRB5CCNAME=FILE:"$2/$(cat "$2/primary")" ;'
                 '} ' #'>/tmp/ssh.log 2>&1'
                 '; '
                 '{ [ -z "$SSH_AUTH_SOCK" ] && which ssh-agent >/dev/null; } || '
