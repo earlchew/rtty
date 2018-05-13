@@ -20,6 +20,7 @@ import sys
 import os
 import errno
 import re
+import pipes
 from fnmatch import fnmatch
 
 ARG0        = sys.argv.pop(0)
@@ -726,7 +727,7 @@ class SshApplication(Application):
 
     @property
     def forceInteractiveOpt(self):
-        return [ '-t' ]
+        return '-t'
 
     @property
     def configuration(self):
@@ -757,7 +758,7 @@ class MoshApplication(Application):
 
     @property
     def forceInteractiveOpt(self):
-        return [ ]
+        return None
 
     def quoteShellCommand(self, cmd):
 
@@ -907,8 +908,10 @@ else:
         os.environ[name] = value
         debug("EXPORT %s=%s" % (name, value))
 
+    interactiveOpt = application.forceInteractiveOpt
+
     argv = list(sys.argv)
-    if len(argv) == 1:
+    if len(argv) == 1 or interactiveOpt in argopt:
 
         # Write the command assuming that it will be passed to ssh.
         # Other applications will have to adapt this string to
@@ -925,34 +928,71 @@ else:
         # Prefer to use FILE: rather than DIR: because older
         # krb5 libraries only provide support for FILE:
 
-        argopt.extend( application.forceInteractiveOpt )
-        argv.extend(
+        if interactiveOpt is not None:
+            if interactiveOpt not in argopt:
+                argopt.append(interactiveOpt)
+
+        argv = (
+            argv[:1] +
             application.quoteShellCommand(
-                #'set -x ; '
+                'set -x ; '
+                'krb5()'
                 '{'
-                '  set -- "$KRB5CCNAME" "/tmp/krb5cc_$USER" "$USER" ;'
-                '  if [ -n "$1" -a -n "$3" -a '
-                       'x"${1#FILE:}" != x"$1" -a -d "$2" ] ; then'
-                '    set -- "${1#FILE:}" "$2" "$('
-                '      exec sed -ne "6{s,^[^0-9]*,,;p}" /proc/self/status)" ;'
-                '    set -- "$@" "$2/$(cat "$2/primary")" ;'
-                '    if ! cmp -s -- "$1" "$4" ; then'
-                '      cp -p -- "$1" "$4.$3" ;'
-                '      mv -- "$4.$3" "$4" ;'
+                '  {'
+                '    set -- ;'
+                '    set -- "$@" "$KRB5CCNAME" ;'
+                '    set -- "$@" "${KRB5CCNAME#FILE:}" ;'
+                '    set -- "$@" "/tmp/krb5cc_$USER" ;'
+                '    set -- "$@" "$USER" ;'
+                '    if [ -r "$3/primary" ] ; then'
+                '      set -- "$@" "$3/$(cat "$3/primary")" ;'
+                '    else'
+                '      set -- "$@" "" ;'
                 '    fi ;'
-                '    rm -f -- "$4.$3" ;'
-                '  fi ;'
-                '  KRB5CCNAME=FILE:"$2/$(cat "$2/primary")" ;'
-                '} ' #'>/tmp/ssh.log 2>&1'
-                '; '
-                '{ [ -z "$SSH_AUTH_SOCK" ] && which ssh-agent >/dev/null; } || '
-                  '{ exec "$SHELL" -li ; exit 1 ; } ; '
-                'set -- sh -c \'ssh-add ; exec "$SHELL" -li\' ; '
-                'if [ -n "$XDG_RUNTIME_DIR" ] ; then '
-                  'set -- -a "$XDG_RUNTIME_DIR/ssh-agent-$$" "$@" ; '
-                  'rm -f "$2" ; '
-                'fi ; '
-                'exec ssh-agent "$@"'))
+                '    if [ -n "$1" -a x"$1" != x"$2" '
+                           '-a -d "$3" -a -n "$4" ] ; then'
+                '      set -- "$@" "$('
+                '        exec sed -ne "6{s,^[^0-9]*,,;p}" /proc/self/status)" ;'
+                '      if ! cmp -s -- "$2" "$5" ; then'
+                '        cp -p -- "$2" "$5.$6" ;'
+                '        mv -T -- "$5.$6" "$5" ;'
+                '      fi ;'
+                '      rm -f -- "$5.$6" ;'
+                '    fi ;'
+                '    [ -z "$5" ] || KRB5CCNAME="FILE:$5" ;'
+                '  } ' #'>/tmp/ssh.log 2>&1'
+                '} ; '
+
+                'shell()'
+                '{'
+                '  krb5 ; '
+                '  { [ -z "$SSH_AUTH_SOCK" ] '
+                      '&& which ssh-agent >/dev/null; } ||'
+                '  {'
+                '    if [ $# -ne 0 ] ; then '
+                '      eval set -- -c "$1" ; '
+                '    fi ; '
+                '    exec "$SHELL" -li "$@" ; '
+                '    exit 1 ; '
+                '  } ; '
+                '  if [ $# -ne 0 ] ; then '
+                '    set -- " -c $1" ; '
+                '  fi ; '
+                '  set -- sh -c \'ssh-add ; exec "$SHELL" -li\'"${1+ -c $1}" ; '
+                '  if [ -n "$XDG_RUNTIME_DIR" ] ; then '
+                    'set -- -a "$XDG_RUNTIME_DIR/ssh-agent-$$" "$@" ; '
+                    'rm -f "$2" ; '
+                '  fi ; '
+                '  exec ssh-agent "$@" ; '
+                '} ; '
+
+                'shell ' + (
+                    ''
+                    if len(argv) <= 1 else
+                    pipes.quote(pipes.quote(' '.join(argv[1:])))
+                )
+            )
+        )
         debug("ARGV: %s" % (' '.join("<%s>" % (arg) for arg in argv)))
 
     cleanPath = os.pathsep.join([
