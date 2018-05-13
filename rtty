@@ -737,6 +737,15 @@ class SshApplication(Application):
         return [ cmd ]
 
 ###############################################################################
+class AutoSshApplication(SshApplication):
+
+    def __init__(self):
+        super(AutoSshApplication, self).__init__()
+
+    def _argOptions(self):
+        return super(AutoSshApplication, self)._argOptions() | set(['-M'])
+
+###############################################################################
 class MoshApplication(Application):
 
     def __init__(self):
@@ -852,6 +861,9 @@ class ApplicationFactory:
 
     @staticmethod
     def createApplication(aAppName):
+
+        if aAppName == "autossh":
+            return AutoSshApplication()
 
         if aAppName == "ssh":
             return SshApplication()
