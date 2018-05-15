@@ -28,9 +28,10 @@ RTTYNAME    = 'rtty'
 RTTYDEBUG  = os.getenv("RTTYDEBUG") != None
 RTTYPREFIX = '#@-rtty-'
 
-def debug(msg):
-    if RTTYDEBUG:
+def debug(msg=None):
+    if RTTYDEBUG and msg is not None:
         sys.stderr.write("+ %s\n" % (msg))
+    return RTTYDEBUG if msg is None else None
 
 def usage():
     sys.stderr.write("Usage: %s [app] [opts] [user@]host\n" % ( ARG0 ))
@@ -803,7 +804,7 @@ class MoshApplication(Application):
         serveropts.append((
             "--server=", [
                 '{',
-                #'  set -x ;',
+            ] + ( ['set -x ;'] if debug() else [] ) + [
                 '  set -- "$KRB5CCNAME" "/tmp/krb5cc_$USER" "$USER" ;',
                 '  if [ -n "$1" -a -n "$3" -a '
                        'x"${1#FILE:}" != x"$1" -a -d "$2" ] ; then',
@@ -947,7 +948,7 @@ else:
         argv = (
             argv[:1] +
             application.quoteShellCommand(
-                'set -x ; '
+                ( 'set -x ; ' if debug() else '' ) +
                 'krb5()'
                 '{'
                 '  {'
