@@ -945,8 +945,18 @@ else:
             if interactiveOpt not in argopt:
                 argopt.append(interactiveOpt)
 
-        argv = (
-            argv[:1] +
+        # Find the name of the host to connect to by skipping all the
+        # options with arguments that remain on the command line.
+
+        cmdv = argv
+        argv = [ ]
+
+        while cmdv[0].startswith('-'):
+            argv.append(cmdv.pop(0))
+            argv.append(cmdv.pop(0))
+
+        argv.extend(
+            cmdv[:1] +
             application.quoteShellCommand(
                 ( 'set -x ; ' if debug() else '' ) +
                 'krb5()'
@@ -1001,8 +1011,8 @@ else:
 
                 'shell ' + (
                     ''
-                    if len(argv) <= 1 else
-                    pipes.quote(pipes.quote(' '.join(argv[1:])))
+                    if len(cmdv) <= 1 else
+                    pipes.quote(pipes.quote(' '.join(cmdv[1:])))
                 )
             )
         )
