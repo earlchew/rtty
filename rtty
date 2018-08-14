@@ -904,6 +904,16 @@ else:
     if hostNamePos > 0:
         hostName = hostName[hostNamePos:]
 
+# Always clean the path, so that recursive invocations for ProxyCommand
+# will not end up finding this script, but will instead find the
+# underlying program.
+
+cleanPath = os.pathsep.join([
+    dir
+    for dir in os.environ["PATH"].split(os.pathsep)
+    if dir != bindir]),
+debug("PATH: %s" % (cleanPath))
+
 if ( len(sys.argv) != 1 and not application.interactive or
      application.forwardingOnly ):
 
@@ -912,7 +922,11 @@ if ( len(sys.argv) != 1 and not application.interactive or
     # the application.
 
     terminal = PlainTerminal(config, hostName)
-    sys.argv = [ binexe ] + argopt + sys.argv
+    sys.argv = [
+        "/usr/bin/env",
+        "PATH={}".format(cleanPath),
+        binexe
+    ] + argopt + sys.argv
 
 else:
     geometry = application.geometry
@@ -1017,12 +1031,6 @@ else:
             )
         )
         debug("ARGV: %s" % (' '.join("<%s>" % (arg) for arg in argv)))
-
-    cleanPath = os.pathsep.join([
-        dir
-        for dir in os.environ["PATH"].split(os.pathsep)
-        if dir != bindir]),
-    debug("PATH: %s" % (cleanPath))
 
     sys.argv = terminal.args(
         "/usr/bin/env",
