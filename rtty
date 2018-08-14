@@ -18,6 +18,7 @@
 
 import sys
 import os
+import os.path
 import errno
 import re
 import pipes
@@ -862,13 +863,15 @@ class ApplicationFactory:
     @staticmethod
     def createApplication(aAppName):
 
-        if aAppName == "autossh":
+        appName = os.path.basename(aAppName)
+
+        if appName == "autossh":
             return AutoSshApplication()
 
-        if aAppName == "ssh":
+        if appName == "ssh":
             return SshApplication()
 
-        if aAppName == "mosh":
+        if appName == "mosh":
             return MoshApplication()
 
         return None
