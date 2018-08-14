@@ -525,11 +525,16 @@ class OsxITerm(OsxTerminal):
     @staticmethod
     def _quoteCmd(text):
 
-        # Rather strangely, ITerm requires double quoting of the
+        # Rather strangely, ITerm2 requires double quoting of the
         # argument in order to pass it through to the underlying
         # application intact.
+        #
+        # Since 3.2.0 ITerm2 supports the use of $$$$ to quote $$:
+        #
+        # https://gitlab.com/gnachman/iterm2/issues/6631
 
-        return OsxTerminal._quote('"' + OsxTerminal._quote(text) + '"')
+        return OsxTerminal._quote(
+            '"' + OsxTerminal._quote(text.replace('$$', '$$$$')) + '"')
 
     def args(self, aProgram, aTitle, aArgs):
 
@@ -793,11 +798,6 @@ class MoshApplication(Application):
         # Propagate KRB5CCNAME before the bootstrap ssh session closes
         # and the kerberos certificate is lost.
         #
-        # Do not use $$ because iTerm2 does not have a way to
-        # quote them:
-        #
-        # https://gitlab.com/gnachman/iterm2/issues/6631
-        #
         # Prefer to use FILE: rather than DIR: because older
         # krb5 libraries only provide support for FILE:
         #
@@ -808,8 +808,7 @@ class MoshApplication(Application):
                 '  set -- "$KRB5CCNAME" "/tmp/krb5cc_$USER" "$USER" ;',
                 '  if [ -n "$1" -a -n "$3" -a '
                        'x"${1#FILE:}" != x"$1" -a -d "$2" ] ; then',
-                '    set -- "${1#FILE:}" "$2" "$('
-                '      exec sed -ne "6{s,^[^0-9]*,,;p}" /proc/self/status)" ;',
+                '    set -- "${1#FILE:}" "$2" "$$" ;'
                 '    set -- "$@" "$2/$(cat "$2/primary")" ;',
                 '    if ! cmp -s -- "$1" "$4" ; then',
                 '      cp -p -- "$1" "$4.$3" ;',
@@ -988,8 +987,7 @@ else:
                 '    fi ;'
                 '    if [ -n "$1" -a x"$1" != x"$2" '
                            '-a -d "$3" -a -n "$4" ] ; then'
-                '      set -- "$@" "$('
-                '        exec sed -ne "6{s,^[^0-9]*,,;p}" /proc/self/status)" ;'
+                '      set -- "$@" "$$" ;'
                 '      if ! cmp -s -- "$2" "$5" ; then'
                 '        cp -p -- "$2" "$5.$6" ;'
                 '        mv -T -- "$5.$6" "$5" ;'
