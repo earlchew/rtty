@@ -726,7 +726,7 @@ class SshApplication(Application):
 
     @property
     def _isForwardingOnly(self):
-        return self.option('-N') is not None
+        return self.option('-N') is not None or self.option('-W') is not None
 
     @property
     def _isInteractive(self):
