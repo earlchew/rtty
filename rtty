@@ -59,7 +59,7 @@ def which(aName):
                for path in binpath.split(os.pathsep)
                if os.path.isfile(os.path.join(path, binfile)) ]
 
-    binexe = binalt.pop() if len(binalt) != 0 else None
+    binexe = binalt.pop(0) if len(binalt) != 0 else None
 
     return ( binexe, binpath )
 
