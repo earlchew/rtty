@@ -740,6 +740,10 @@ class SshApplication(Application):
     def configuration(self):
         return self.__config
 
+    @property
+    def environment(self):
+        return {}
+
     def quoteShellCommand(self, cmd):
         return [ cmd ]
 
@@ -751,6 +755,16 @@ class AutoSshApplication(SshApplication):
 
     def _argOptions(self):
         return super(AutoSshApplication, self)._argOptions() | set(['-M'])
+
+    @property
+    def environment(self):
+        env = {
+            key: value
+            for (key, value) in os.environ.items()
+            if key.startswith("AUTOSSH_")
+        }
+        env.update(super(AutoSshApplication, self).environment)
+        return env
 
 ###############################################################################
 class MoshApplication(Application):
@@ -913,8 +927,19 @@ else:
 cleanPath = os.pathsep.join([
     dir
     for dir in os.environ["PATH"].split(os.pathsep)
-    if dir != bindir]),
-debug("PATH: %s" % (cleanPath))
+    if dir != bindir])
+
+# Create an array of environment variables to propagate via /usr/bin/env.
+# This is required because the new terminal is created in another process
+# tree.
+
+cleanEnv = { "PATH": cleanPath }
+cleanEnv.update(application.environment)
+
+cleanEnvArg = []
+for (key, value) in cleanEnv.items():
+    cleanEnvArg.append("{}={}".format(key, value))
+    debug("%s: %s" % (key, value))
 
 if ( len(sys.argv) != 1 and not application.interactive or
      application.forwardingOnly ):
@@ -926,7 +951,7 @@ if ( len(sys.argv) != 1 and not application.interactive or
     terminal = PlainTerminal(config, hostName)
     sys.argv = [
         "/usr/bin/env",
-        "PATH={}".format(cleanPath),
+    ] + cleanEnvArg + [
         binexe
     ] + argopt + sys.argv
 
@@ -1037,7 +1062,7 @@ else:
         "/usr/bin/env",
         (application.title if application.title
                            else ' '.join(str(arg) for arg in sys.argv)),
-        [ "PATH={}".format(cleanPath), binexe ] + argopt + [ '--' ] + argv)
+        cleanEnvArg + [ binexe ] + argopt + [ '--' ] + argv)
 
 debug("EXEC: %s" % (' '.join("'%s'" % (arg) for arg in sys.argv)))
 
